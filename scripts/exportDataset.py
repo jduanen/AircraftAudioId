@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Export recorded sessions to a training CSV for use with hold/Arena1/toolchain.py.
+Export recorded sessions to a training CSV for use with toolchain.py.
 
 Usage:
     python scripts/exportDataset.py --recordingsDir ./recordings [--output dataset.csv]
