@@ -1,1 +1,7 @@
-sounddevice soundfile numpy requests geopy scipy ntplib
+geopy
+ntplib
+numpy
+requests
+scipy
+sounddevice
+soundfile
