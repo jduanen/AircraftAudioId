@@ -1,0 +1,20 @@
+# Core ML (main machine)
+torch
+torchaudio
+pytorch-lightning
+torchmetrics
+audiomentations
+
+# Data / metrics
+scikit-learn
+pandas
+numpy
+scipy
+
+# Audio I/O
+sounddevice
+soundfile
+
+# Networking / ADS-B
+requests
+geopy

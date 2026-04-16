@@ -1,0 +1,3 @@
+# Pi Zero W pip requirements.txt
+#optional: ntplib  (for NTP offset check at startup)
+sounddevice soundfile numpy requests geopy scipy
