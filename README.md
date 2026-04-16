@@ -1,5 +1,6 @@
 # Audio Classification of Aircraft
 
+**WIP**
 
 ## Design Notes
 
@@ -8,6 +9,7 @@
 
 * Progression
   - start with just aircraft type (e.g., propulsion: jet/turbine/piston, number of engines: 1/2/4, wing type: rotary/fixed, etc.)
+  ==> maybe skip this and go straight to the multiple case?
   - start with just a single aicraft in audio range, then work on classifying multiple simultaneously audible aircraft
   - attempt to determine additional attributes of aircraft (e.g., engine/airframe model, distance, direction, etc.)
 
@@ -105,9 +107,9 @@
     * e.g.,
 '''
 configs_to_try = [
-    {"n_mels": 64,  "n_fft": 512,  "hop_length": 256},   # Higher time resolution
-    {"n_mels": 128, "n_fft": 1024, "hop_length": 512},    # Balanced
-    {"n_mels": 256, "n_fft": 2048, "hop_length": 512},    # Higher freq resolution
+    {"n_mels": 64,  "n_fft": 512,  "hop_length": 256},  # Higher time resolution
+    {"n_mels": 128, "n_fft": 1024, "hop_length": 512},  # Balanced
+    {"n_mels": 256, "n_fft": 2048, "hop_length": 512},  # Higher freq resolution
 ]
 '''
   - priorities with large dataset
