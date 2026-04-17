@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import argparse
-from aircraftAudio.recorder import AircraftRecordingSystem
+from aircraftAudio.record.recorder import AircraftRecordingSystem
 
 
 def main():

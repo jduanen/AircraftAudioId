@@ -1,1 +1,1 @@
-from .recorder import AircraftRecordingSystem
+from .record.recorder import AircraftRecordingSystem

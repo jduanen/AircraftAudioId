@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from aircraftAudio.audioStream.piCapture import PiCapture, buildArgParser
+from aircraftAudio.capture.piCapture import PiCapture, buildArgParser
 
 
 if __name__ == "__main__":

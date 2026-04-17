@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from aircraftAudio.clipExport import buildClipDataset, splitByEvent
+from aircraftAudio.dataset.clipExport import buildClipDataset, splitByEvent
 
 
 def main():
