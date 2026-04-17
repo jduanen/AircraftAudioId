@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head><title>1kHz Tone</title></head>
+<body>
+  <button onclick="playTone()">Play 1kHz (30 sec)</button>
+  <button onclick="stopTone()">Stop</button>
+  <script>
+    let audioCtx, oscillator;
+    function playTone() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      oscillator = audioCtx.createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
+      oscillator.connect(audioCtx.destination);
+      oscillator.start();
+      setTimeout(() => oscillator.stop(), 30000);
+    }
+    function stopTone() {
+      if (oscillator) oscillator.stop();
+    }
+  </script>
+</body>
+</html>
