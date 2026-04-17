@@ -38,6 +38,7 @@ MIN_STATES_BEFORE_SAVE = 3
 class RecordingMetadata:
     recordingId: str
     startTime: str
+    audioStartTime: float     # Pi-side Unix timestamp of sample 0 in the WAV
     duration: float
     sampleRate: int
     observerLat: float
@@ -225,6 +226,7 @@ class AircraftRecordingSystem:
         durationSecs = max(10.0, min(abs(spanSecs) + 2.0, MAX_RECORDING_SECS))
 
         audio = self.audioStream.getBuffer(durationSecs)
+        audioStartTime = self.audioStream.getBufferStartTime(durationSecs)
 
         closestState = min(states, key=lambda s: s["distanceKm"])
         minDistanceKm = closestState["distanceKm"]
@@ -240,6 +242,7 @@ class AircraftRecordingSystem:
         metadata = RecordingMetadata(
             recordingId=recordingId,
             startTime=datetime.now().isoformat(),
+            audioStartTime=audioStartTime,
             duration=durationSecs,
             sampleRate=self.sampleRate,
             observerLat=self.observerLat,

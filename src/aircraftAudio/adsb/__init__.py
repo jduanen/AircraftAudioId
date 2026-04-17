@@ -15,3 +15,4 @@ class AircraftState:
     distanceKm: float
     bearingDeg: float
     seenSecs: float       # seconds since last message from readsb
+    capturedAt: float = 0.0  # server-side Unix timestamp when this state was polled

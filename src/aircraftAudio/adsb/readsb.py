@@ -88,7 +88,7 @@ class ReadsbClient:
                 continue
 
             # readsb reports altitude in feet, speed in knots
-            altitudeFt = entry.get("altitude", 0) or 0
+            altitudeFt = entry.get("alt_geom", 0) or 0
             if excludeOnGround and altitudeFt < minAltitudeFt:
                 continue
 
@@ -111,6 +111,7 @@ class ReadsbClient:
                     self.observerLat, self.observerLon, lat, lon
                 ),
                 seenSecs=entry.get("seen", 0) or 0,
+                capturedAt=self._lastPoll,
             ))
 
         return results
