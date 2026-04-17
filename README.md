@@ -68,7 +68,9 @@ python scripts/buildDataset.py \
     --clipSecs 5.0 \
     --maxDistanceKm 8.0
 ```
-  
+  - this produces `dataset/train.csv` and `dataset/val.csv` which plug directly into toolchain.py's VehicleAudioDataset
+  - `toolchain.py` expects 'filepath' (path to a 5-second clip WAV) and 'vehicle_types' (JSON list, e.g., ["B738"])
+  - the generated CSV files contain 'directionClass' (i.e., values 0–7, from 'headingDeg') and 'velocityKts' (for when the direction and speed heads are added to the model)
 
 ### Model Training (DGX Sparc)
 
