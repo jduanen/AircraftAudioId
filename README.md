@@ -62,25 +62,63 @@ python scripts/record.py --lat <lat> --lon <lon> --radiusKm 8 --outputDir ./reco
 ```
 * **`scripts/buildDataset.py`**: reads recordings (meta)data and generates training dataset suitable for input to `toolchain.py`
   - e.g., ```bash
-python scripts/buildDataset.py \
-    --recordingsDir ./recordings \
-    --outputDir ./dataset \
-    --clipSecs 5.0 \
-    --maxDistanceKm 8.0
+  python scripts/buildDataset.py --recordingsDir ./recordings --outputDir ./dataset \
+      --faaDatabaseDir ./data/ReleasableAircraft
+
+?    --clipSecs 5.0 \
+?    --maxDistanceKm 8.0
 ```
   - this produces `dataset/train.csv` and `dataset/val.csv` which plug directly into toolchain.py's VehicleAudioDataset
   - `toolchain.py` expects 'filepath' (path to a 5-second clip WAV) and 'vehicle_types' (JSON list, e.g., ["B738"])
   - the generated CSV files contain 'directionClass' (i.e., values 0–7, from 'headingDeg') and 'velocityKts' (for when the direction and speed heads are added to the model)
+* **`scripts/inspectDataset.py`**: provides a measure of the quantity, quality, and distribution of collected training/testing samples.
 
 ### Model Training (DGX Sparc)
 
-* ????
+* Phase 1: Classify by vehicle type (multi-label, single-aircraft clips)
+  - the coarse categories in typeCategories.py are the current working labels:
+    * piston_single, piston_twin, turboprop, helicopter, business_jet, regional_jet, narrowbody_jet, widebody_jet
+  - ????
 
+## Workflow
 
+1) Set up ADS-B capture device
+  * Hardware
+    - Rpi4B with two SDR dongles, RF splitter, and a dual-mode (1090/9??MHz) antenna
+    - ?
+  * Software
+    - run `readsb` ????
+    - ?
 
-* **`?.py`**: 
-* 
+2) Set up audio capture device
+  * Hardware
+    - RPi0-2W with ???? ADC and ???? microphone
+    - ???? rechargeable battery pack and ???? solar panel
+    - waterproof enclosure
+    - microphone wind screen
+    - ?tower?
+  * Software
+    - ?npt/crony?
+    - run `python3 ./scripts/capture.py --host <serverIPA>`
 
+3) Get Training/Validation Dataset
+  * Gather dataset
+    - ?
+  * Prepare dataset
+    - ?
+  * Verify dataset
+    - ?quality, class distribution, sampling context distribution, null cases?
+    - ?
+  * Split dataset into training and validation subsets
+    - ?
+
+4) Training
+  * Phase 1: ?single aircraft, classify by type?
+    - ?
+  * Phase 2: ????
+    - ?
+  * Phase 3: ????
+    - ?
 
 ## Design Notes
 

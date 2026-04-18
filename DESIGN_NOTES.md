@@ -122,6 +122,25 @@ configs_to_try = [
     * \>80%
       - set-based prediction (Approach A) or Sound source separation as pre-processing step
 
+* Spectrogram Config Is the Highest-Leverage Decision
+  - the current pipeline computes spectrograms inside the model (resNetCNN.py, customCNN.py, etc.)
+    * this makes the config a model hyperparameter, which means:
+      - To change n_mels or n_fft, you reinstantiate the model
+      - You can't precompute spectrograms (pretrained/precompute.py) without code changes
+      - You can't run fast spectrogram sweep experiments
+  - recommended changes:
+    * move spectrogram computation into the Dataset before Phase 2 begins
+    * use pretrained/precompute.py to precompute to .pt tensors
+    * treat (n_mels, n_fft, hop_length) as an outer hyperparameter loop above
+ training
+
+* selecting sample size is another critical decision
+  - generally, 2sec for sharp events, 4sec for GP classification, and 8-10sec for slowly evolving sounds
+  - fix sample length, train once, then sweep window size
+    * try 1, 2, 4, and 8sec samples and compare validation accuracy
+    * pick smallest one that preserves accuracy
+  - initial code uses 10sec audio clips
+
 * Open-source tools that could be useful for this project
   - Audio loading and preprocessing
     * torchaudio (recommended)
@@ -215,6 +234,52 @@ configs_to_try = [
   - choose appropriate model for each task (maybe same one for multiple tasks?)
   - evaluate CNN and Spectrogram with multi-task heads as a candidate model architecture
     * convert audio to mel/log-mel spectrograms and use image classification-like CNN model, with multiple heads -- one for each task
+  - model architecture choice continuum:
+    * <100 clips/type  → PANNs embeddings + small head (pretrained/panns.py)
+    * 100–500/type     → AST fine-tuning (pretrained/ast.py)  ← likely current regime
+    * 500–2000/type    → ResNet-34 with pretrained weights (models/resNetCNN.py)
+    * >2000/type       → ResNet-34 or DeepVehicleCNN from scratch
+  - starting with ResNet-34 with ImageNet pretrained weights is reasonable but not optimal
+    * ImageNet features are RGB photos, not spectrograms
+  - recommended Architecture: AST Fine-Tuning for Phase 1
+    * pretrained/ast.py — MIT AST fine-tuned on AudioSet
+    * why AST beats ResNet-34 in Phase 1:
+      1. AudioSet explicitly includes aircraft sounds (jet engine, helicopter, propeller).
+         The pretrained features are already audio-domain, not image-domain
+      2. AST fine-tuning converges in 5–15 epochs with small datasets where ResNet needs 50+
+      3. The HuggingFace Trainer handles checkpointing, evaluation, and early stopping cleanly
+   * when to switch to ResNet-34 / DeepVehicleCNN:
+     - Once you have >500 labeled clips per class
+     - Once AST inference latency is a problem
+     - Once you want tighter control over the spectrogram config (AST has its own feature extractor)
+
+* Project Phases
+  - Phase 1: Classify by vehicle type (multi-label, single-aircraft clips only)
+    * Vehicle types
+      - high-level category
+        * Propulsion: jet, turbine, piston
+        * Engine count: [1-N]
+        * Wing type: rotary (helicopter) vs. fixed-wing
+      - detailed category
+        * from the FAA's Releaseable Aircraft Registration database
+          - do lookup in database based on ICAO24 number
+        * ICAO24 → category using FAA TYPE-ACFT + TYPE-ENG + NO-SEATS fields
+          - falls back to typeToCategory(aircraftType) for foreign aircraft
+        * doesn't work for non-US, military, special, or excluded aircraft
+    * Dataset
+      - ?
+
+  - Phase 2: Classify by Direction of travel (single-aircraft clips only)
+    * one of eight cardinal classes (N/NE/E/SE/S/SW/W/NW)
+
+  - Phase 3: Classify by speed (single-aircraft clips only)
+    * scalar regression (knots)
+
+  - Phase 4: Multi-aircraft handling
+    * detect/classify overlapping aircraft in the same clip
+
+  - Phase 5 (longer-term): Additional attributes 
+    * distance, altitude, specific engine/airframe model
 
 * Model Training Process
   - **TBD**
