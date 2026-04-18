@@ -15,6 +15,7 @@ import socket
 import struct
 import threading
 import time
+from collections import deque
 import numpy as np
 
 
@@ -64,6 +65,11 @@ class RemoteAudioStream:
         self._serverSock: socket.socket | None = None
         self._recvThread: threading.Thread | None = None
 
+        # Rolling clock-skew estimate: piTimestamp - serverTime at chunk receipt.
+        # Positive → Pi clock is ahead of server clock.
+        # Capped at 200 samples; median is used for robustness.
+        self._skewSamples: deque[float] = deque(maxlen=200)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -110,6 +116,25 @@ class RemoteAudioStream:
 
         # Convert int16 → float32 normalised, add channel dim
         return (chunk.astype(np.float32) / 32768.0).reshape(-1, 1)
+
+    def getClockSkewSecs(self) -> float | None:
+        """
+        Return the estimated Pi-clock − server-clock offset in seconds, or None
+        if fewer than 10 samples have been collected yet.
+
+        Positive means the Pi clock is ahead of the server clock.
+        Used by recorder.py to store clockSkewSecs in recording metadata so
+        align.py can correct capturedAt (server) vs audioStartTime (Pi) offsets.
+        """
+        with self._lock:
+            samples = list(self._skewSamples)
+        if len(samples) < 10:
+            return None
+        samples_sorted = sorted(samples)
+        mid = len(samples_sorted) // 2
+        if len(samples_sorted) % 2 == 0:
+            return (samples_sorted[mid - 1] + samples_sorted[mid]) / 2
+        return samples_sorted[mid]
 
     def getBufferStartTime(self, durationSecs: float) -> float:
         """
@@ -163,7 +188,13 @@ class RemoteAudioStream:
                 if header is None:
                     break
 
+                serverNow = time.time()
                 timestamp, byteLen = struct.unpack(HEADER_FMT, header)
+
+                # Update rolling clock-skew estimate.
+                skewSample = timestamp - serverNow
+                with self._lock:
+                    self._skewSamples.append(skewSample)
 
                 # Detect gaps (Pi reconnected or clock jump).
                 if lastTimestamp is not None:

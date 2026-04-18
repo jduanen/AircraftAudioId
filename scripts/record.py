@@ -27,6 +27,11 @@ def main():
     p.add_argument("--listenPort", type=int, default=9876, help="TCP port to receive Pi audio")
     p.add_argument("--readsbUrl", type=str, default="http://adsbrx.lan/data/aircraft.json",
                    help="readsb JSON endpoint URL")
+    p.add_argument("--nullSampleInterval", type=float, default=None,
+                   help="Save a background (null) clip every N seconds when no aircraft is "
+                        "in range.  Disabled by default.  Recommended: 120–300.")
+    p.add_argument("--nullSampleDuration", type=float, default=10.0,
+                   help="Duration of null clips in seconds (default: 10)")
     args = p.parse_args()
 
     system = AircraftRecordingSystem(
@@ -38,6 +43,8 @@ def main():
         sampleRate=args.sampleRate,
         listenPort=args.listenPort,
         readsbUrl=args.readsbUrl,
+        nullSampleIntervalSecs=args.nullSampleInterval,
+        nullSampleDurationSecs=args.nullSampleDuration,
     )
     system.start()
 

@@ -104,7 +104,7 @@ class ReadsbClient:
                 latitude=lat,
                 longitude=lon,
                 altitudeFt=altitudeFt,
-                velocityKts=entry.get("speed", 0) or 0,
+                velocityKts=entry.get("gs", 0) or 0,
                 headingDeg=entry.get("track", 0) or 0,
                 distanceKm=distanceKm,
                 bearingDeg=_calculateBearing(

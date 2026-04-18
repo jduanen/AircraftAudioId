@@ -35,6 +35,18 @@ def main():
                    help="Skip states where aircraft is closer than this (km)")
     p.add_argument("--maxDistanceKm", type=float, default=None,
                    help="Skip states where aircraft is farther than this (km)")
+    p.add_argument("--faaDatabaseDir", type=Path, default=None,
+                   help="Path to unzipped FAA ReleasableAircraft directory for authoritative type_categories")
+    p.add_argument("--clockCorrection", type=float, default=None,
+                   help="Pi−server clock offset in seconds (positive = Pi was ahead). "
+                        "Used for existing recordings without a stored clockSkewSecs.")
+    p.add_argument("--autoCorrectClock", action="store_true",
+                   help="Estimate per-recording clock skew from state timestamps. "
+                        "Recommended for existing recordings with inconsistent skew.")
+    p.add_argument("--maxCoTrackRatio", type=float, default=None,
+                   help="Exclude clips where any co-tracked aircraft is within "
+                        "(ratio × primary distance).  E.g. 2.0 keeps only clips "
+                        "where the next-closest aircraft is more than 2× farther.")
     args = p.parse_args()
 
     df = buildClipDataset(
@@ -43,6 +55,10 @@ def main():
         clipSecs=args.clipSecs,
         minDistanceKm=args.minDistanceKm,
         maxDistanceKm=args.maxDistanceKm,
+        faaDatabaseDir=args.faaDatabaseDir,
+        clockCorrectionSecs=args.clockCorrection,
+        autoCorrectClock=args.autoCorrectClock,
+        maxCoTrackDistanceRatio=args.maxCoTrackRatio,
     )
 
     if df.empty:

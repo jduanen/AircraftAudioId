@@ -8,17 +8,21 @@ fixed-length audio clip centred on that position, and writes a dataset.csv
 with one row per clip.
 
 Label columns written to the CSV:
-    filepath        — absolute path to the clip WAV
-    recordingId     — flyover event ID (use this for train/test splitting)
-    vehicle_types   — JSON list of aircraft type strings (multi-label)
-    directionClass  — 0–7, aircraft heading quantised to 8 cardinal directions
-                      (0=N, 1=NE, 2=E, ... 7=NW).  -1 if heading unavailable.
-    velocityKts     — aircraft speed at this state (knots)
-    altitudeFt      — aircraft altitude at this state (feet)
-    distanceKm      — distance from observer at this state (km)
-    bearingDeg      — bearing from observer to aircraft (degrees)
-    headingDeg      — aircraft heading (degrees, direction of travel)
-    clipOffsetSecs  — time offset of clip centre from audio start (seconds)
+    filepath          — absolute path to the clip WAV
+    recordingId       — flyover event ID (use this for train/test splitting)
+    vehicle_types     — JSON list of raw aircraft type strings (multi-label)
+    type_categories   — JSON list of coarse category strings, parallel to vehicle_types
+                        (piston_single | piston_twin | turboprop | helicopter |
+                         business_jet | regional_jet | narrowbody_jet | widebody_jet | unknown)
+    isSingle          — 1 if exactly one aircraft was tracked in this recording, else 0
+    directionClass    — 0–7, aircraft heading quantised to 8 cardinal directions
+                        (0=N, 1=NE, 2=E, ... 7=NW).  -1 if heading unavailable.
+    velocityKts       — aircraft speed at this state (knots)
+    altitudeFt        — aircraft altitude at this state (feet)
+    distanceKm        — distance from observer at this state (km)
+    bearingDeg        — bearing from observer to aircraft (degrees)
+    headingDeg        — aircraft heading (degrees, direction of travel)
+    clipOffsetSecs    — time offset of clip centre from audio start (seconds)
 """
 
 import json
@@ -29,6 +33,8 @@ from pathlib import Path
 from typing import Optional
 
 from .align import alignedWindows
+from .typeCategories import typeToCategory
+from .faaDatabase import FaaDatabase
 
 
 def _headingToDirectionClass(headingDeg: float) -> int:
@@ -74,6 +80,10 @@ def buildClipDataset(
     outputCsv: Optional[str | Path] = None,
     minDistanceKm: Optional[float] = None,
     maxDistanceKm: Optional[float] = None,
+    faaDatabaseDir: Optional[str | Path] = None,
+    clockCorrectionSecs: Optional[float] = None,
+    autoCorrectClock: bool = False,
+    maxCoTrackDistanceRatio: Optional[float] = None,
 ) -> pd.DataFrame:
     """
     Extract per-state clips from all recordings and write a dataset CSV.
@@ -83,8 +93,23 @@ def buildClipDataset(
         outputDir:       Directory to write clip WAVs into.
         clipSecs:        Duration of each extracted clip in seconds.
         outputCsv:       CSV output path.  Defaults to <outputDir>/dataset.csv.
-        minDistanceKm:   Skip states where the aircraft is farther than this.
-        maxDistanceKm:   Skip states where the aircraft is closer than this.
+        minDistanceKm:        Skip states where the aircraft is farther than this.
+        maxDistanceKm:        Skip states where the aircraft is closer than this.
+        faaDatabaseDir:       Path to unzipped FAA ReleasableAircraft directory.
+        clockCorrectionSecs:  Manual Pi−server clock offset (seconds) for
+                              recordings that pre-date the clockSkewSecs metadata
+                              field.  Ignored for recordings that already have
+                              clockSkewSecs stored.
+        autoCorrectClock:          If True, estimate per-recording clock skew from the
+                                   state timestamps when no stored/manual correction is
+                                   available.  Recommended for existing recordings.
+        maxCoTrackDistanceRatio:   Exclude clips where any co-tracked aircraft is closer
+                                   than (ratio × primary distance).  E.g. 2.0 means skip
+                                   clips where another aircraft is within 2× the primary's
+                                   distance.  None disables the filter.
+                         When provided, ICAO24-based lookup is used for
+                         type_categories instead of model-string heuristics.
+                         Foreign aircraft fall back to the string heuristic.
 
     Returns:
         DataFrame of all clips written.
@@ -97,9 +122,16 @@ def buildClipDataset(
     if outputCsv is None:
         outputCsv = outputDir / "dataset.csv"
 
+    faaDb: Optional[FaaDatabase] = None
+    if faaDatabaseDir is not None:
+        faaDb = FaaDatabase(faaDatabaseDir)
+        print(f"FAA database loaded: {len(faaDb)} registrations")
+
     rows = []
     skippedNoAlignment = 0
     skippedDistance = 0
+    skippedCoTrack = 0
+    nullClips = 0
 
     for metaPath in sorted((recordingsDir / "metadata").glob("*.json")):
         with open(metaPath) as f:
@@ -120,11 +152,56 @@ def buildClipDataset(
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
 
+        # ── Null (background) recordings ─────────────────────────────────────
+        if meta.get("isNullSample"):
+            clip = _extractClip(audio, sampleRate, len(audio) // 2, clipSecs)
+            clipName = f"{recordingId}_null.wav"
+            clipPath = clipsDir / clipName
+            sf.write(str(clipPath), clip, sampleRate)
+            rows.append({
+                "filepath":         str(clipPath.resolve()),
+                "recordingId":      recordingId,
+                "vehicle_types":    json.dumps([]),
+                "type_categories":  json.dumps([]),
+                "isSingle":         0,
+                "directionClass":   -1,
+                "velocityKts":      0.0,
+                "altitudeFt":       0.0,
+                "distanceKm":       0.0,
+                "bearingDeg":       0.0,
+                "headingDeg":       0.0,
+                "clipOffsetSecs":   meta.get("duration", clipSecs) / 2,
+            })
+            nullClips += 1
+            continue
+
         aircraftType = meta.get("aircraftType")
         vehicleTypes = [aircraftType] if aircraftType else []
 
+        # Resolve category: FAA ICAO24 lookup first, string heuristic fallback.
+        primaryIcao = next(
+            (s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")),
+            None,
+        )
+        if faaDb is not None and primaryIcao:
+            typeCategories = [faaDb.categoryForIcao24(primaryIcao, aircraftType)]
+        else:
+            typeCategories = [typeToCategory(t) for t in vehicleTypes]
+
+        # isSingle: true when only one aircraft was tracked in this recording.
+        allIcao = {s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")}
+        isSingle = 1 if len(allIcao) == 1 else 0
+
+        # co-tracked aircraft distances for ratio filter
+        coTracked = meta.get("coTrackedAircraft", [])
+
         try:
-            states = alignedWindows(metaPath, windowSecs=clipSecs)
+            states = alignedWindows(
+                metaPath,
+                windowSecs=clipSecs,
+                clockCorrectionSecs=clockCorrectionSecs,
+                autoCorrect=autoCorrectClock,
+            )
         except ValueError:
             skippedNoAlignment += 1
             continue
@@ -138,6 +215,14 @@ def buildClipDataset(
                 skippedDistance += 1
                 continue
 
+            # Distance ratio filter: skip if any co-tracked aircraft is within
+            # (ratio × this state's distance).
+            if maxCoTrackDistanceRatio is not None and distKm > 0 and coTracked:
+                threshold = maxCoTrackDistanceRatio * distKm
+                if any(c.get("distanceKm", 999) <= threshold for c in coTracked):
+                    skippedCoTrack += 1
+                    continue
+
             centreSample = state["sampleIndex"]
             clip = _extractClip(audio, sampleRate, centreSample, clipSecs)
 
@@ -149,9 +234,11 @@ def buildClipDataset(
             dirClass = _headingToDirectionClass(headingDeg) if headingDeg >= 0 else -1
 
             rows.append({
-                "filepath":       str(clipPath.resolve()),
-                "recordingId":    recordingId,
-                "vehicle_types":  json.dumps(vehicleTypes),
+                "filepath":         str(clipPath.resolve()),
+                "recordingId":      recordingId,
+                "vehicle_types":    json.dumps(vehicleTypes),
+                "type_categories":  json.dumps(typeCategories),
+                "isSingle":         isSingle,
                 "directionClass": dirClass,
                 "velocityKts":    state.get("velocityKts", 0.0),
                 "altitudeFt":     state.get("altitudeFt", 0.0),
@@ -165,12 +252,16 @@ def buildClipDataset(
     df.to_csv(outputCsv, index=False)
 
     print(f"Clips written:        {len(df)}")
+    if nullClips:
+        print(f"  of which null:    {nullClips}")
     print(f"Output directory:     {clipsDir}")
     print(f"CSV:                  {outputCsv}")
     if skippedNoAlignment:
         print(f"Skipped (no audioStartTime — re-record): {skippedNoAlignment}")
     if skippedDistance:
-        print(f"Skipped (distance filter): {skippedDistance}")
+        print(f"Skipped (distance filter):   {skippedDistance}")
+    if skippedCoTrack:
+        print(f"Skipped (co-track ratio):    {skippedCoTrack}")
 
     return df
 

@@ -38,7 +38,8 @@ MIN_STATES_BEFORE_SAVE = 3
 class RecordingMetadata:
     recordingId: str
     startTime: str
-    audioStartTime: float     # Pi-side Unix timestamp of sample 0 in the WAV
+    audioStartTime: float        # Pi-side Unix timestamp of sample 0 in the WAV
+    clockSkewSecs: Optional[float]   # Pi clock − server clock at recording time
     duration: float
     sampleRate: int
     observerLat: float
@@ -47,6 +48,8 @@ class RecordingMetadata:
     closestAircraft: Optional[dict]
     minDistanceKm: Optional[float]
     aircraftType: Optional[str]
+    coTrackedAircraft: list      # other aircraft tracked simultaneously (icao24 + distanceKm)
+    isNullSample: bool = False   # True for background-noise-only recordings
 
 
 class AircraftRecordingSystem:
@@ -78,12 +81,16 @@ class AircraftRecordingSystem:
         sampleRate: int = 44100,
         listenPort: int = 9876,
         readsbUrl: str = "http://adsbrx.lan/data/aircraft.json",
+        nullSampleIntervalSecs: Optional[float] = None,
+        nullSampleDurationSecs: float = 10.0,
     ):
         self.observerLat = observerLat
         self.observerLon = observerLon
         self.radiusKm = radiusKm
         self.minAltitudeFt = minAltitudeFt
         self.sampleRate = sampleRate
+        self.nullSampleIntervalSecs = nullSampleIntervalSecs
+        self.nullSampleDurationSecs = nullSampleDurationSecs
 
         self.outputDir = Path(outputDir)
         self.audioDir = self.outputDir / "audio"
@@ -111,6 +118,7 @@ class AircraftRecordingSystem:
         self._savedIcao: set[str] = set()
 
         self._running = False
+        self._lastNullSampleTime: float = 0.0
 
     # ------------------------------------------------------------------
     # Public API
@@ -142,6 +150,11 @@ class AircraftRecordingSystem:
         self._running = True
         monitorThread = threading.Thread(target=self._monitoringLoop, daemon=True)
         monitorThread.start()
+
+        if self.nullSampleIntervalSecs:
+            nullThread = threading.Thread(target=self._nullSamplingLoop, daemon=True)
+            nullThread.start()
+            print(f"Null sampling every {self.nullSampleIntervalSecs:.0f}s when no aircraft in range.")
 
         print("Running. Press Ctrl+C to stop.\n")
         try:
@@ -205,10 +218,9 @@ class AircraftRecordingSystem:
             return False
 
         # Trigger 1: aircraft is leaving (last 3 distances are increasing).
-        distances = [s["distanceKm"] for s in states[-5:]]
-        if len(distances) >= 3:
-            if all(distances[i] > distances[i - 1] for i in range(-2, 0)):
-                return True
+        distances = [s["distanceKm"] for s in states[-3:]]
+        if len(distances) == 3 and distances[0] < distances[1] < distances[2]:
+            return True
 
         # Trigger 2: max duration cap (aircraft has been tracked too long).
         elapsed = now - self._firstSeenTime.get(icao24, now)
@@ -216,6 +228,45 @@ class AircraftRecordingSystem:
             return True
 
         return False
+
+    def _nullSamplingLoop(self) -> None:
+        while self._running:
+            time.sleep(self.nullSampleIntervalSecs)
+            if not self._trackedAircraft and self.audioStream.isConnected():
+                now = time.time()
+                if now - self._lastNullSampleTime >= self.nullSampleIntervalSecs:
+                    self._saveNullRecording()
+                    self._lastNullSampleTime = now
+
+    def _saveNullRecording(self) -> None:
+        audio = self.audioStream.getBuffer(self.nullSampleDurationSecs)
+        audioStartTime = self.audioStream.getBufferStartTime(self.nullSampleDurationSecs)
+        clockSkewSecs = self.audioStream.getClockSkewSecs()
+
+        recordingId = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_null"
+        audioPath = self.audioDir / f"{recordingId}.wav"
+        sf.write(str(audioPath), audio, self.sampleRate)
+
+        metadata = RecordingMetadata(
+            recordingId=recordingId,
+            startTime=datetime.now().isoformat(),
+            audioStartTime=audioStartTime,
+            clockSkewSecs=clockSkewSecs,
+            duration=self.nullSampleDurationSecs,
+            sampleRate=self.sampleRate,
+            observerLat=self.observerLat,
+            observerLon=self.observerLon,
+            aircraftStates=[],
+            closestAircraft=None,
+            minDistanceKm=None,
+            aircraftType=None,
+            coTrackedAircraft=[],
+            isNullSample=True,
+        )
+        metaPath = self.metadataDir / f"{recordingId}.json"
+        with open(metaPath, "w") as f:
+            json.dump(asdict(metadata), f, indent=2)
+        print(f"  [null] Saved background sample {recordingId}")
 
     def _saveRecording(self, icao24: str) -> None:
         states = self._trackedAircraft[icao24]
@@ -227,6 +278,7 @@ class AircraftRecordingSystem:
 
         audio = self.audioStream.getBuffer(durationSecs)
         audioStartTime = self.audioStream.getBufferStartTime(durationSecs)
+        clockSkewSecs = self.audioStream.getClockSkewSecs()
 
         closestState = min(states, key=lambda s: s["distanceKm"])
         minDistanceKm = closestState["distanceKm"]
@@ -239,10 +291,17 @@ class AircraftRecordingSystem:
         audioPath = self.audioDir / f"{recordingId}.wav"
         sf.write(str(audioPath), audio, self.sampleRate)
 
+        coTracked = [
+            {"icao24": other, "distanceKm": self._trackedAircraft[other][-1]["distanceKm"]}
+            for other in self._trackedAircraft
+            if other != icao24 and self._trackedAircraft[other]
+        ]
+
         metadata = RecordingMetadata(
             recordingId=recordingId,
             startTime=datetime.now().isoformat(),
             audioStartTime=audioStartTime,
+            clockSkewSecs=clockSkewSecs,
             duration=durationSecs,
             sampleRate=self.sampleRate,
             observerLat=self.observerLat,
@@ -251,6 +310,7 @@ class AircraftRecordingSystem:
             closestAircraft=closestState,
             minDistanceKm=minDistanceKm,
             aircraftType=aircraftType,
+            coTrackedAircraft=coTracked,
         )
 
         metaPath = self.metadataDir / f"{recordingId}.json"
