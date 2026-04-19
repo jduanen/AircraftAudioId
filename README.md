@@ -61,7 +61,8 @@ python3 ./scripts/capture.py --host <serverIPA>
 python scripts/record.py --lat <lat> --lon <lon> --radiusKm 8 --outputDir ./recordings --readsbUrl http://adsbrx.lan/tar1090/data/aircraft.json
 ```
 * **`scripts/buildDataset.py`**: reads recordings (meta)data and generates training dataset suitable for input to `toolchain.py`
-  - e.g., ```bash
+  - e.g.,
+```bash
   python scripts/buildDataset.py --recordingsDir ./recordings --outputDir ./dataset \
       --faaDatabaseDir ./data/ReleasableAircraft
 
@@ -102,19 +103,44 @@ python scripts/record.py --lat <lat> --lon <lon> --radiusKm 8 --outputDir ./reco
     - run `python3 ./scripts/capture.py --host <serverIPA>`
 
 3) Get Training/Validation Dataset
-  * Gather dataset
+  * Gather and prepare dataset and generate splits
     - ?
-  * Prepare dataset
-    - ?
+```bash
+python scripts/buildDataset.py \
+      --recordingsDir ./recordings \
+      --outputDir ./dataset \
+      --faaDatabaseDir ./data/ReleasableAircraft \
+      --autoCorrectClock \
+      --maxCoTrackRatio 2.0
+```
+    - produces: 'dataset/train.csv', 'dataset/val.csv', and 'dataset/clips/*.wav'
+    - options:
+      * clipSecs <float>: change clip length in secs (default: 5sec)
+      * minDistanceKm <float>: filter out aircraft that are too close (can cause audio clipping)
+      * maxDistanceKm <float>: filter out aircraft that are too far away to be heard clearly
+      * trainFrac <float>: adjust ratio of train/val split (defaults to 80/20 -- i.e., 0.8)
+      * clockCorrection <float>: manual global clock offset
+        - only use if --autoCorrectClock option produces uniformly bad alignment
   * Verify dataset
-    - ?quality, class distribution, sampling context distribution, null cases?
-    - ?
-  * Split dataset into training and validation subsets
-    - ?
+    - before training, run test to check dataset
+    - check the quality, class distribution (including null cases), and sampling context distribution of the dataset
+      * want to be sure we have sufficient labeled examples of each category, under different capture circumstances (e.g., weather, time-of-day, etc.), and that there are approximately the same number of examples for each category
+```bash
+python scripts/inspectDataset.py --recordingsDir ./recordings --datasetDir ./dataset
+```
 
 4) Training
   * Phase 1: ?single aircraft, classify by type?
     - ?
+    - `python -m aircraftClassifier.training.toolchain --trainCsv dataset/train.csv --valCsv dataset/val.csv --useCategories`
+```bash
+python -m aircraftClassifier.training.toolchain \
+      --trainCsv dataset/train.csv \
+      --valCsv dataset/val.csv \
+      --useCategories \
+      --bgNoiseDir dataset/clips  # use null clips as background noise source
+```
+
   * Phase 2: ????
     - ?
   * Phase 3: ????

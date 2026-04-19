@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#### JDN Added
+data/ReleasableAircraft/
+dataset/
+recordings/
