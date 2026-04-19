@@ -104,6 +104,7 @@ python scripts/record.py --lat <lat> --lon <lon> --radiusKm 8 --outputDir ./reco
 
 3) Get Training/Validation Dataset
   * Gather and prepare dataset and generate splits
+    - **`buildDataset.py`**: produces 'dataset/train.csv', 'dataset/val.csv', and 'dataset/clips/*.wav'
     - ?
 ```bash
 python scripts/buildDataset.py \
@@ -112,8 +113,7 @@ python scripts/buildDataset.py \
       --faaDatabaseDir ./data/ReleasableAircraft \
       --autoCorrectClock \
       --maxCoTrackRatio 2.0
-```
-    - produces: 'dataset/train.csv', 'dataset/val.csv', and 'dataset/clips/*.wav'
+
     - options:
       * clipSecs <float>: change clip length in secs (default: 5sec)
       * minDistanceKm <float>: filter out aircraft that are too close (can cause audio clipping)
@@ -121,6 +121,8 @@ python scripts/buildDataset.py \
       * trainFrac <float>: adjust ratio of train/val split (defaults to 80/20 -- i.e., 0.8)
       * clockCorrection <float>: manual global clock offset
         - only use if --autoCorrectClock option produces uniformly bad alignment
+```
+
   * Verify dataset
     - before training, run test to check dataset
     - check the quality, class distribution (including null cases), and sampling context distribution of the dataset
