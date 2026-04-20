@@ -84,6 +84,7 @@ def buildClipDataset(
     clockCorrectionSecs: Optional[float] = None,
     autoCorrectClock: bool = False,
     maxCoTrackDistanceRatio: Optional[float] = None,
+    dropUnknown: bool = False,
 ) -> pd.DataFrame:
     """
     Extract per-state clips from all recordings and write a dataset CSV.
@@ -110,6 +111,8 @@ def buildClipDataset(
                          When provided, ICAO24-based lookup is used for
                          type_categories instead of model-string heuristics.
                          Foreign aircraft fall back to the string heuristic.
+        dropUnknown:     If True, exclude clips whose type_categories list consists
+                         entirely of "unknown" entries (null/background clips are kept).
 
     Returns:
         DataFrame of all clips written.
@@ -249,6 +252,16 @@ def buildClipDataset(
             })
 
     df = pd.DataFrame(rows)
+
+    skippedUnknown = 0
+    if dropUnknown and not df.empty:
+        def _allUnknown(catJson: str) -> bool:
+            cats = json.loads(catJson)
+            return len(cats) > 0 and all(c == "unknown" for c in cats)
+        mask = df["type_categories"].apply(_allUnknown)
+        skippedUnknown = mask.sum()
+        df = df[~mask].reset_index(drop=True)
+
     df.to_csv(outputCsv, index=False)
 
     print(f"Clips written:        {len(df)}")
@@ -262,6 +275,8 @@ def buildClipDataset(
         print(f"Skipped (distance filter):   {skippedDistance}")
     if skippedCoTrack:
         print(f"Skipped (co-track ratio):    {skippedCoTrack}")
+    if skippedUnknown:
+        print(f"Skipped (unknown type):      {skippedUnknown}")
 
     return df
 

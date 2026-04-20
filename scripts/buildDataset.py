@@ -47,6 +47,9 @@ def main():
                    help="Exclude clips where any co-tracked aircraft is within "
                         "(ratio × primary distance).  E.g. 2.0 keeps only clips "
                         "where the next-closest aircraft is more than 2× farther.")
+    p.add_argument("--dropUnknown", action="store_true",
+                   help="Exclude clips whose type_categories are entirely 'unknown'. "
+                        "Null/background clips are kept regardless.")
     args = p.parse_args()
 
     df = buildClipDataset(
@@ -59,6 +62,7 @@ def main():
         clockCorrectionSecs=args.clockCorrection,
         autoCorrectClock=args.autoCorrectClock,
         maxCoTrackDistanceRatio=args.maxCoTrackRatio,
+        dropUnknown=args.dropUnknown,
     )
 
     if df.empty:
