@@ -10,23 +10,41 @@
 
 ### Audio Capture
 
-* RPi0-2W + Mic + USB ADC
-  - I don't have a good mic + USB ADC combination for measurements
+* RPi0-2W
+  - added heat sink to RPi0-2W
+
+* Microphone and ADC
+  - Dayton Audio iMM-6C, USB-C calibrated microphone, 6mm condenser, CM6542
+  - omnidirectional
+  - Specs
+    * 18Hz-20kHz
+    * Max SPL: 120 dB (1% THD)
+    * SNR: 70 dBA
+  - Measurements
+    * Name: iMM-6C: USB Audio (hw:0,0)
+    * Noise floor: -68.9 dBFS (good)
+    * Self-noise: -71.0 dBFS (~26-30dBA equivalent - limits quiet measurements)
+    * Peak headroom: -55.7 dBFS (adequate)
+    * SNR: 23.0 dB (poor - might be measurement problem)
+    * MaxRate: 96000 Hz (good for wide-band analysis)
+    * Spectral flatness: 0.0003
+
+* ?
+
 * **TODO**
-  - get better mic and ADC combo
-  - look into AD ADC eval board with SPI interface
+  - evaluate other mic and ADC eval boards with SPI interface
   - design and build rechargeable (Nx 16750?) PSU with solar panel
   - design and build weatherproof enclosure
   - find proper mounting location
 
 ### ADS-B/Audio Processing
 
-* Ubuntu machine with 128GB DRAM and GTX2080
+* Ubuntu machine with i7-7820X, 128GB DRAM, and GTX2080
 * ?
 
 ### Model Training and Inference
 
-* DGX Spark
+* DGX Spark: GB10 (128GB unified DRAM, 20x ARM CPU cores, Blackwell GPU)
 
 ## Software
 
