@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from aircraftAudio.dataset.clipExport import buildClipDataset, splitByEvent
+from aircraftAudio.dataset.clipExport import buildClipDataset, splitByEvent, balanceDataset
 
 
 def main():
@@ -50,6 +50,12 @@ def main():
     p.add_argument("--dropUnknown", action="store_true",
                    help="Exclude clips whose type_categories are entirely 'unknown'. "
                         "Null/background clips are kept regardless.")
+    p.add_argument("--balanceClasses", action="store_true",
+                   help="Downsample so each label (including null) has equal clip count. "
+                        "Uses the rarest label count unless --maxPerClass is also given.")
+    p.add_argument("--maxPerClass", type=int, default=None,
+                   help="Cap clips per label at this number (implies --balanceClasses). "
+                        "Useful when the rarest class still has more clips than desired.")
     args = p.parse_args()
 
     df = buildClipDataset(
@@ -68,6 +74,11 @@ def main():
     if df.empty:
         print("No clips generated — check that recordings were made with the updated recorder.py.")
         return
+
+    if args.balanceClasses or args.maxPerClass is not None:
+        before = len(df)
+        df = balanceDataset(df, maxPerClass=args.maxPerClass)
+        print(f"Balanced: {before} → {len(df)} clips (cap: {args.maxPerClass or 'auto'})")
 
     trainDf, valDf = splitByEvent(df, trainFrac=args.trainFrac)
     trainDf.to_csv(args.outputDir / "train.csv", index=False)

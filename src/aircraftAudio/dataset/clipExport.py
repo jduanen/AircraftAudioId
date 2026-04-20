@@ -301,3 +301,57 @@ def splitByEvent(
     trainDf = df[df["recordingId"].isin(trainEvents)].reset_index(drop=True)
     valDf = df[~df["recordingId"].isin(trainEvents)].reset_index(drop=True)
     return trainDf, valDf
+
+
+def balanceDataset(
+    df: pd.DataFrame,
+    maxPerClass: Optional[int] = None,
+    labelCol: str = "type_categories",
+    seed: int = 42,
+) -> pd.DataFrame:
+    """
+    Downsample df so each label (including null/background) has at most
+    maxPerClass clips.  If maxPerClass is None, uses the count of the rarest
+    label so all classes end up with equal representation.
+
+    Multi-label clips count toward every label they carry.  The greedy
+    algorithm processes labels from most-common to least-common, dropping
+    randomly from each over-represented label in turn.  This keeps rarer
+    labels intact while reducing dominant ones.
+
+    Args:
+        df:           Dataset DataFrame with a type_categories JSON column.
+        maxPerClass:  Cap per label.  None = auto (rarest label count).
+        labelCol:     Column containing JSON-encoded label lists.
+        seed:         RNG seed for reproducible downsampling.
+
+    Returns:
+        Downsampled DataFrame, index reset.
+    """
+    rng = np.random.default_rng(seed)
+    parsed = df[labelCol].apply(json.loads).tolist()
+
+    # Build label → row indices mapping (null = empty list)
+    labelToIndices: dict[str, list[int]] = {"null": []}
+    for i, cats in enumerate(parsed):
+        if not cats:
+            labelToIndices["null"].append(i)
+        else:
+            for c in cats:
+                labelToIndices.setdefault(c, []).append(i)
+
+    if maxPerClass is None:
+        maxPerClass = min(len(v) for v in labelToIndices.values())
+
+    keepMask = np.ones(len(df), dtype=bool)
+
+    # Process most-common labels first so rarer labels lose fewer clips.
+    for label in sorted(labelToIndices, key=lambda l: -len(labelToIndices[l])):
+        currentIndices = [i for i in labelToIndices[label] if keepMask[i]]
+        excess = len(currentIndices) - maxPerClass
+        if excess > 0:
+            toDrop = rng.choice(currentIndices, excess, replace=False)
+            keepMask[toDrop] = False
+
+    result = df[keepMask].reset_index(drop=True)
+    return result
