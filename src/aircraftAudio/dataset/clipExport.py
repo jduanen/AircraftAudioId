@@ -279,7 +279,7 @@ def splitByEvent(
         (train_df, val_df)
     """
     rng = np.random.default_rng(seed)
-    eventIds = df["recordingId"].unique()
+    eventIds = df["recordingId"].unique().astype(str)
     rng.shuffle(eventIds)
     nTrain = max(1, int(len(eventIds) * trainFrac))
     trainEvents = set(eventIds[:nTrain])
