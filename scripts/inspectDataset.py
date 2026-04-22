@@ -141,6 +141,7 @@ def inspectAlignment(metaPaths: list[Path]) -> None:
             noStartTime += 1
             continue
 
+        skew = meta.get("clockSkewSecs") or 0.0
         states = meta.get("aircraftStates", [])
         inW = 0
         for s in states:
@@ -149,7 +150,7 @@ def inspectAlignment(metaPaths: list[Path]) -> None:
             if capturedAt is None:
                 noCapturedAt += 1
                 continue
-            offset = capturedAt - audioStartTime
+            offset = capturedAt - audioStartTime + skew
             offsets.append(offset)
             if 0.0 <= offset <= duration:
                 inWindowStates += 1
@@ -243,6 +244,11 @@ def inspectCsv(csvPath: Path) -> None:
         _countBar(typeCounts, "Raw vehicle_types distribution")
     else:
         print("\n  No vehicle_types labels found.")
+
+    # Flight phase distribution
+    if "flightPhase" in df.columns:
+        phaseCounts = Counter(df["flightPhase"].tolist())
+        _countBar(phaseCounts, "Flight phase distribution")
 
     # Direction class distribution
     if "directionClass" in df.columns:
