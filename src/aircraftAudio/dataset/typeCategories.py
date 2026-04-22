@@ -61,7 +61,6 @@ _EXPLICIT: dict[str, str] = {
     "pa-32r-301t":                  "piston_single",   # Saratoga
     "sr20":                         "piston_single",
     "sr22t":                        "piston_single",
-    "pa-24":                        "piston_single",
 
     # ── Turboprops ────────────────────────────────────────────────────────────
     "pa 46-350p":                   "turboprop",       # Piper Malibu Meridian
