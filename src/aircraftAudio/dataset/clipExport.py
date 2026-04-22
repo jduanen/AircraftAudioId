@@ -15,6 +15,8 @@ Label columns written to the CSV:
                         (piston_single | piston_twin | turboprop | helicopter |
                          business_jet | regional_jet | narrowbody_jet | widebody_jet | unknown)
     isSingle          — 1 if exactly one aircraft was tracked in this recording, else 0
+    flightPhase       — "approach" | "closest" | "departure" | "unknown"
+                        derived from distance trend across adjacent ADS-B states
     directionClass    — 0–7, aircraft heading quantised to 8 cardinal directions
                         (0=N, 1=NE, 2=E, ... 7=NW).  -1 if heading unavailable.
     velocityKts       — aircraft speed at this state (knots)
@@ -35,6 +37,31 @@ from typing import Optional
 from .align import alignedWindows
 from .typeCategories import typeToCategory
 from .faaDatabase import FaaDatabase
+
+
+def _flightPhase(distances: list[float], idx: int) -> str:
+    """
+    Classify a state as approach/closest/departure based on its neighbours.
+    `distances` is the full ordered list of distanceKm for all states in the
+    recording; `idx` is the position of this state within that list.
+    """
+    prev = distances[idx - 1] if idx > 0 else None
+    nxt  = distances[idx + 1] if idx < len(distances) - 1 else None
+    d    = distances[idx]
+
+    if prev is None and nxt is None:
+        return "unknown"
+    if prev is not None and nxt is not None:
+        if prev > d and d < nxt:
+            return "closest"
+        if prev > d:
+            return "approach"
+        if d < nxt:
+            return "approach"
+        return "departure"
+    if prev is None:
+        return "approach" if (nxt is not None and d <= nxt) else "departure"
+    return "departure" if (prev is not None and d >= prev) else "approach"
 
 
 def _headingToDirectionClass(headingDeg: float) -> int:
@@ -167,6 +194,7 @@ def buildClipDataset(
                 "vehicle_types":    json.dumps([]),
                 "type_categories":  json.dumps([]),
                 "isSingle":         0,
+                "flightPhase":      "null",
                 "directionClass":   -1,
                 "velocityKts":      0.0,
                 "altitudeFt":       0.0,
@@ -209,6 +237,8 @@ def buildClipDataset(
             skippedNoAlignment += 1
             continue
 
+        allDistances = [s["distanceKm"] for s in states]
+
         for i, state in enumerate(states):
             distKm = state.get("distanceKm", 0.0)
             if minDistanceKm is not None and distKm < minDistanceKm:
@@ -242,13 +272,14 @@ def buildClipDataset(
                 "vehicle_types":    json.dumps(vehicleTypes),
                 "type_categories":  json.dumps(typeCategories),
                 "isSingle":         isSingle,
-                "directionClass": dirClass,
-                "velocityKts":    state.get("velocityKts", 0.0),
-                "altitudeFt":     state.get("altitudeFt", 0.0),
-                "distanceKm":     distKm,
-                "bearingDeg":     state.get("bearingDeg", 0.0),
-                "headingDeg":     headingDeg,
-                "clipOffsetSecs": state.get("timeOffsetSecs", 0.0),
+                "flightPhase":      _flightPhase(allDistances, i),
+                "directionClass":   dirClass,
+                "velocityKts":      state.get("velocityKts", 0.0),
+                "altitudeFt":       state.get("altitudeFt", 0.0),
+                "distanceKm":       distKm,
+                "bearingDeg":       state.get("bearingDeg", 0.0),
+                "headingDeg":       headingDeg,
+                "clipOffsetSecs":   state.get("timeOffsetSecs", 0.0),
             })
 
     df = pd.DataFrame(rows)

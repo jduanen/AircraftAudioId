@@ -114,8 +114,6 @@ class AircraftRecordingSystem:
         self._trackedAircraft: dict[str, list[dict]] = {}
         # icao24 → time of first detection (for max-duration cap)
         self._firstSeenTime: dict[str, float] = {}
-        # icao24 → (capturedAt, distanceKm) of the closest-approach state seen so far
-        self._closestApproach: dict[str, tuple[float, float]] = {}
         # Set of icao24 for which we've already saved a recording this pass.
         self._savedIcao: set[str] = set()
 
@@ -208,12 +206,6 @@ class AircraftRecordingSystem:
 
         self._trackedAircraft[icao24].append(asdict(state))
 
-        # Keep _closestApproach updated to the state with minimum distance so far.
-        stateDict = self._trackedAircraft[icao24][-1]
-        prev = self._closestApproach.get(icao24)
-        if prev is None or stateDict["distanceKm"] <= prev[1]:
-            self._closestApproach[icao24] = (stateDict["capturedAt"], stateDict["distanceKm"])
-
         if self._shouldRecord(icao24, now):
             self._saveRecording(icao24)
 
@@ -225,23 +217,9 @@ class AircraftRecordingSystem:
         if len(states) < MIN_STATES_BEFORE_SAVE:
             return False
 
-        # Trigger 1: symmetric departure window.
-        # Wait until the departure phase is as long as the approach phase so
-        # clips are evenly split between approaching and departing audio.
-        # The departure phase starts at closest approach; the approach phase
-        # starts at first detection.
+        # Trigger 1: aircraft is leaving (last 3 distances are increasing).
         distances = [s["distanceKm"] for s in states[-3:]]
         if len(distances) == 3 and distances[0] < distances[1] < distances[2]:
-            closestEntry = self._closestApproach.get(icao24)
-            firstAt = states[0]["capturedAt"]
-            if closestEntry is not None:
-                closestAt = closestEntry[0]
-                if closestAt > firstAt:
-                    approachSecs = closestAt - firstAt
-                    departureSecs = states[-1]["capturedAt"] - closestAt
-                    if departureSecs < approachSecs:
-                        return False  # keep waiting for symmetric departure data
-
             return True
 
         # Trigger 2: max duration cap.
