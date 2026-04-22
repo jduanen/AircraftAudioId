@@ -119,6 +119,8 @@ python scripts/buildDataset.py \
       * trainFrac <float>: adjust ratio of train/val split (defaults to 80/20 -- i.e., 0.8)
       * clockCorrection <float>: manual global clock offset
         - only use if --autoCorrectClock option produces uniformly bad alignment
+      * stratifyPhase: use the rarest bucket (e.g., (narrowbody_jet, approach), (narrowbody_jet, departure), (piston_single, approach), etc.), so every label ends up with equal approach and departure counts. Without this, the existing per-label balancing is unchanged
+
 ```
 
   - this produces `dataset/train.csv` and `dataset/val.csv` which plug directly into toolchain.py's VehicleAudioDataset and reference the audio samples in `clips/`
@@ -202,6 +204,7 @@ python3 scripts/buildDataset.py \
       --autoCorrectClock \
       --maxCoTrackRatio 2.0 \
       --dropUnknown \
+      --stratifyPhase \
       --balanceClasses  # auto-balance to rarest class count, or --maxPerClass 200  # cap each class at a given number
 ```
     - ?
