@@ -56,6 +56,9 @@ def main():
     p.add_argument("--maxPerClass", type=int, default=None,
                    help="Cap clips per label at this number (implies --balanceClasses). "
                         "Useful when the rarest class still has more clips than desired.")
+    p.add_argument("--stratifyPhase", action="store_true",
+                   help="When balancing, split each label into (label × flightPhase) "
+                        "buckets so approach and departure clips are kept in equal numbers.")
     args = p.parse_args()
 
     df = buildClipDataset(
@@ -77,8 +80,10 @@ def main():
 
     if args.balanceClasses or args.maxPerClass is not None:
         before = len(df)
-        df = balanceDataset(df, maxPerClass=args.maxPerClass)
-        print(f"Balanced: {before} → {len(df)} clips (cap: {args.maxPerClass or 'auto'})")
+        df = balanceDataset(df, maxPerClass=args.maxPerClass, stratifyPhase=args.stratifyPhase)
+        cap = args.maxPerClass or "auto"
+        mode = "label × phase" if args.stratifyPhase else "label"
+        print(f"Balanced: {before} → {len(df)} clips (cap: {cap}, buckets: {mode})")
 
     trainDf, valDf = splitByEvent(df, trainFrac=args.trainFrac)
     trainDf.to_csv(args.outputDir / "train.csv", index=False)
