@@ -232,7 +232,10 @@ def buildClipDataset(
         allIcao = {s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")}
         isSingle = 1 if len(allIcao) == 1 else 0
 
-        # co-tracked aircraft distances for ratio filter
+        # co-tracked aircraft distances for ratio filter.
+        # These are a snapshot at recording-save time, not per-state, so the
+        # filter is conservative: any recording where a co-tracked aircraft was
+        # close at save time will have all its clips excluded.
         coTracked = meta.get("coTrackedAircraft", [])
 
         try:
