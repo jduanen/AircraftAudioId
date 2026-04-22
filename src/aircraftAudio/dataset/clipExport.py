@@ -44,6 +44,10 @@ def _flightPhase(distances: list[float], idx: int) -> str:
     Classify a state as approach/closest/departure based on its neighbours.
     `distances` is the full ordered list of distanceKm for all states in the
     recording; `idx` is the position of this state within that list.
+
+    Approach  = distance decreasing (aircraft getting closer)
+    Departure = distance increasing (aircraft getting farther)
+    Closest   = local minimum (both neighbours are farther)
     """
     prev = distances[idx - 1] if idx > 0 else None
     nxt  = distances[idx + 1] if idx < len(distances) - 1 else None
@@ -51,17 +55,22 @@ def _flightPhase(distances: list[float], idx: int) -> str:
 
     if prev is None and nxt is None:
         return "unknown"
+
     if prev is not None and nxt is not None:
-        if prev > d and d < nxt:
-            return "closest"
-        if prev > d:
-            return "approach"
-        if d < nxt:
-            return "approach"
-        return "departure"
+        if d < prev and d < nxt:
+            return "closest"       # local minimum
+        if d <= prev:
+            return "approach"      # getting closer (or same distance)
+        return "departure"         # getting farther
+
     if prev is None:
-        return "approach" if (nxt is not None and d <= nxt) else "departure"
-    return "departure" if (prev is not None and d >= prev) else "approach"
+        # First state: direction determined by what comes next.
+        # d > nxt means next state is closer → aircraft is approaching.
+        return "approach" if d > nxt else "departure"
+
+    # Last state: direction determined by previous.
+    # d >= prev means distance increased or held → departing.
+    return "departure" if d >= prev else "approach"
 
 
 def _headingToDirectionClass(headingDeg: float) -> int:
