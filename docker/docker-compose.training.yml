@@ -1,0 +1,48 @@
+# One-shot training job for Phase 1 classifier.
+# Run with: scripts/trainDGX.sh [extra toolchain.py args...]
+#
+# This file is intended to be executed ON the DGX Spark after syncing
+# the project with scripts/syncToDGX.sh.
+services:
+  aircraft-training:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.training
+    image: aircraft-audio-training:latest
+    container_name: aircraft-training
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # Avoids OOM fragmentation on long training runs
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+
+    volumes:
+      # Mount at exact host path — train.csv contains absolute clip paths
+      # like /home/jdn/Code/AircraftAudioId/dataset/clips/*.wav
+      - /home/jdn/Code/AircraftAudioId:/home/jdn/Code/AircraftAudioId:ro
+      # Checkpoints are written to a separate writable volume
+      - ${CHECKPOINT_DIR:-/home/jdn/Code/AircraftAudioId/checkpoints}:/checkpoints
+
+    working_dir: /home/jdn/Code/AircraftAudioId
+
+    # Default args; trainDGX.sh appends TRAINING_ARGS for user overrides
+    command: >
+      --trainCsv /home/jdn/Code/AircraftAudioId/dataset/train.csv
+      --valCsv   /home/jdn/Code/AircraftAudioId/dataset/val.csv
+      --outputDir /checkpoints
+      ${TRAINING_ARGS:-}
+
+    # Shared host IPC namespace — required for DataLoader pin_memory workers;
+    # the default 64 MB /dev/shm causes errors at non-trivial batch sizes.
+    ipc: host
+
+    restart: "no"

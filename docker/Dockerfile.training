@@ -1,0 +1,30 @@
+# Aircraft Audio Classifier — Phase 1 Training Container
+#
+# Base: NVIDIA NGC PyTorch (multi-arch manifest; pulls arm64 automatically on
+# DGX Spark GB10). Includes CUDA-optimized PyTorch 2.x, torchaudio, cuDNN —
+# do NOT reinstall these via pip.
+#
+# NGC tag reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch
+FROM nvcr.io/nvidia/pytorch:25.01-py3
+
+# libsndfile1 is required by audiomentations → soundfile at import time
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libsndfile1 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install extras not included in the NGC base.
+# Pinned to Lightning 2.x to match PyTorch 2.x API.
+# --no-deps on the project install prevents PyPI from downgrading NGC torch.
+RUN pip install --no-cache-dir \
+    "pytorch-lightning>=2.3,<3.0" \
+    "torchmetrics>=1.3" \
+    "audiomentations>=0.38" \
+    "pandas>=2.0" \
+    "scikit-learn>=1.4"
+
+# Mount point matches the host path so CSV absolute clip paths remain valid.
+WORKDIR /home/jdn/Code/AircraftAudioId
+COPY . .
+RUN pip install --no-cache-dir --no-deps -e .
+
+ENTRYPOINT ["python", "-m", "aircraftClassifier.training.toolchain"]
