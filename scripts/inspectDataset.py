@@ -252,7 +252,17 @@ def inspectCsv(csvPath: Path) -> None:
 
     # Direction class distribution
     if "directionClass" in df.columns:
-        dirLabels = {0:"N", 1:"NE", 2:"E", 3:"SE", 4:"S", 5:"SW", 6:"W", 7:"NW", -1:"unknown"}
+        dirLabels = {
+            0: "away",             # 0°   flying directly away
+            1: "away-right",       # 45°
+            2: "crossing-right",   # 90°  crossing left→right
+            3: "approaching-right",# 135°
+            4: "toward",           # 180° flying directly toward
+            5: "approaching-left", # 225°
+            6: "crossing-left",    # 270° crossing right→left
+            7: "away-left",        # 315°
+            -1: "unknown",
+        }
         dirCounts = Counter(df["directionClass"].astype(int).tolist())
         total = sum(dirCounts.values())
         print(f"\n  Direction class distribution (n={total})")

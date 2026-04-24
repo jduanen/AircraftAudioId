@@ -17,8 +17,11 @@ Label columns written to the CSV:
     isSingle          — 1 if exactly one aircraft was tracked in this recording, else 0
     flightPhase       — "approach" | "closest" | "departure" | "unknown"
                         derived from distance trend across adjacent ADS-B states
-    directionClass    — 0–7, aircraft heading quantised to 8 cardinal directions
-                        (0=N, 1=NE, 2=E, ... 7=NW).  -1 if heading unavailable.
+    directionClass    — 0–7, aircraft heading relative to observer quantised to 8 bins.
+                        relativeDeg = (headingDeg − bearingDeg + 360) % 360.
+                        0=away, 1=away-right, 2=crossing-right, 3=approaching-right,
+                        4=toward, 5=approaching-left, 6=crossing-left, 7=away-left.
+                        -1 if heading unavailable.
     velocityKts       — aircraft speed at this state (knots)
     altitudeFt        — aircraft altitude at this state (feet)
     distanceKm        — distance from observer at this state (km)
@@ -73,12 +76,20 @@ def _flightPhase(distances: list[float], idx: int) -> str:
     return "departure" if d >= prev else "approach"
 
 
-def _headingToDirectionClass(headingDeg: float) -> int:
+def _relativeDirectionClass(headingDeg: float, bearingDeg: float) -> int:
     """
-    Quantise a heading (0–360) into one of 8 cardinal direction classes.
-    0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW.
+    Quantise the aircraft's heading relative to the observer into 8 bins.
+
+    relativeDeg = (headingDeg − bearingDeg + 360) % 360 captures the
+    Doppler geometry: 0° = flying directly away, 180° = flying directly
+    toward, 90° = crossing left-to-right.  This is aurally meaningful
+    regardless of compass orientation.
+
+    Bins: 0=away, 1=away-right, 2=crossing-right, 3=approaching-right,
+          4=toward, 5=approaching-left, 6=crossing-left, 7=away-left.
     """
-    return int((headingDeg + 22.5) / 45.0) % 8
+    relativeDeg = (headingDeg - bearingDeg + 360.0) % 360.0
+    return int((relativeDeg + 22.5) / 45.0) % 8
 
 
 def _extractClip(
@@ -276,7 +287,8 @@ def buildClipDataset(
             sf.write(str(clipPath), clip, sampleRate)
 
             headingDeg = state.get("headingDeg", -1.0)
-            dirClass = _headingToDirectionClass(headingDeg) if headingDeg >= 0 else -1
+            bearingDeg = state.get("bearingDeg", 0.0)
+            dirClass = _relativeDirectionClass(headingDeg, bearingDeg) if headingDeg >= 0 else -1
 
             rows.append({
                 "filepath":         str(clipPath.resolve()),
