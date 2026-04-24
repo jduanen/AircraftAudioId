@@ -57,6 +57,7 @@ class ReadsbClient:
         self,
         radiusKm: float = 20.0,
         minAltitudeFt: float = 500.0,
+        maxAltitudeFt: Optional[float] = None,
         excludeOnGround: bool = True,
     ) -> list[AircraftState]:
         """
@@ -90,6 +91,8 @@ class ReadsbClient:
             # readsb reports altitude in feet, speed in knots
             altitudeFt = entry.get("alt_geom", 0) or 0
             if excludeOnGround and altitudeFt < minAltitudeFt:
+                continue
+            if maxAltitudeFt is not None and altitudeFt > maxAltitudeFt:
                 continue
 
             distanceKm = geodesic(
