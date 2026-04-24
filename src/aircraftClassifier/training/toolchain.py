@@ -13,6 +13,7 @@ Usage:
 
 import json
 import argparse
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
@@ -230,6 +231,14 @@ def main():
     combinedDf = pd.concat([trainDf, valDf], ignore_index=True)
 
     labelEncoder = buildLabelEncoder(combinedDf, useCategories=args.useCategories)
+
+    # Persist the encoder so eval / inference scripts don't need the train CSV.
+    Path(args.outputDir).mkdir(parents=True, exist_ok=True)
+    encoderPath = Path(args.outputDir) / "labelEncoder.json"
+    with open(encoderPath, "w") as _f:
+        json.dump(labelEncoder, _f, indent=2)
+    print(f"Label encoder saved: {encoderPath}")
+
     labelCol = (
         "type_categories"
         if args.useCategories and "type_categories" in trainDf.columns
