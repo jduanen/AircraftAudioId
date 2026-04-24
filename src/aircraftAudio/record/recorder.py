@@ -28,7 +28,7 @@ from .aircraftType import AircraftDatabase
 POLL_INTERVAL_SECS = 1.0
 
 # Maximum recording duration cap in seconds (catches aircraft that linger).
-MAX_RECORDING_SECS = 45.0
+MAX_RECORDING_SECS = 30.0
 
 # Minimum number of ADS-B states before we consider saving a recording.
 MIN_STATES_BEFORE_SAVE = 3
@@ -66,6 +66,7 @@ class AircraftRecordingSystem:
         outputDir:         Root directory for saved recordings.
         radiusKm:          Only track aircraft within this distance.
         minAltitudeFt:     Ignore aircraft below this altitude.
+        maxAltitudeFt:     Ignore aircraft above this altitude (None = no limit).
         sampleRate:        Audio sample rate (must match Pi capture setting).
         listenPort:        TCP port to receive audio from the Pi.
         readsbUrl:         URL of the readsb JSON endpoint.
@@ -78,6 +79,7 @@ class AircraftRecordingSystem:
         outputDir: str = "recordings",
         radiusKm: float = 20.0,
         minAltitudeFt: float = 500.0,
+        maxAltitudeFt: Optional[float] = None,
         sampleRate: int = 44100,
         listenPort: int = 9876,
         readsbUrl: str = "http://adsbrx.lan/data/aircraft.json",
@@ -88,6 +90,7 @@ class AircraftRecordingSystem:
         self.observerLon = observerLon
         self.radiusKm = radiusKm
         self.minAltitudeFt = minAltitudeFt
+        self.maxAltitudeFt = maxAltitudeFt
         self.sampleRate = sampleRate
         self.nullSampleIntervalSecs = nullSampleIntervalSecs
         self.nullSampleDurationSecs = nullSampleDurationSecs
@@ -181,6 +184,7 @@ class AircraftRecordingSystem:
                 aircraft = self.adsbClient.getAircraft(
                     radiusKm=self.radiusKm,
                     minAltitudeFt=self.minAltitudeFt,
+                    maxAltitudeFt=self.maxAltitudeFt,
                 )
                 if aircraft:
                     ts = datetime.now().strftime("%H:%M:%S")
@@ -348,6 +352,7 @@ class AircraftRecordingSystem:
             "config": {
                 "radiusKm": self.radiusKm,
                 "minAltitudeFt": self.minAltitudeFt,
+                "maxAltitudeFt": self.maxAltitudeFt,
                 "sampleRate": self.sampleRate,
             },
         }
