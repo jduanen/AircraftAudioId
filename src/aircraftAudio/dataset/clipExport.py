@@ -296,6 +296,18 @@ def buildClipDataset(
 
     df = pd.DataFrame(rows)
 
+    if not df.empty and "type_categories" in df.columns:
+        import json as _json_inner
+        unknownClips = sum(
+            1 for raw in df["type_categories"]
+            if all(c == "unknown" for c in _json_inner.loads(raw))
+            and _json_inner.loads(raw)  # non-empty
+        )
+        if unknownClips:
+            pct = 100 * unknownClips / len(df)
+            print(f"[!] {unknownClips} clips ({pct:.0f}%) have only 'unknown' type_categories — "
+                  f"consider passing --faaDatabaseDir for better labels.")
+
     skippedUnknown = 0
     if dropUnknown and not df.empty:
         def _allUnknown(catJson: str) -> bool:
@@ -330,19 +342,26 @@ def splitByEvent(
     seed: int = 42,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Split a clip dataset into train/val by recordingId (flyover event), not by
-    row.  All clips from one flyover stay in the same split.
+    Split a clip dataset into train/val by recording session, not by row.
+    All clips from one flyover stay in the same split.
+
+    Sessions are grouped by the timestamp prefix of recordingId
+    (YYYYMMDD_HHMMSS = first 15 chars).  Two recordings saved within the same
+    second share heavily overlapping audio windows, so splitting on individual
+    recordingIds would leak near-identical audio across the train/val boundary.
 
     Returns:
         (train_df, val_df)
     """
     rng = np.random.default_rng(seed)
-    eventIds = np.array(df["recordingId"].unique(), dtype=str)
-    rng.shuffle(eventIds)
-    nTrain = max(1, int(len(eventIds) * trainFrac))
-    trainEvents = set(eventIds[:nTrain])
-    trainDf = df[df["recordingId"].isin(trainEvents)].reset_index(drop=True)
-    valDf = df[~df["recordingId"].isin(trainEvents)].reset_index(drop=True)
+    # Timestamp prefix groups all recordings saved in the same second together.
+    sessions = np.array(df["recordingId"].str[:15].unique(), dtype=str)
+    rng.shuffle(sessions)
+    nTrain = max(1, int(len(sessions) * trainFrac))
+    trainSessions = set(sessions[:nTrain])
+    sessionMask = df["recordingId"].str[:15].isin(trainSessions)
+    trainDf = df[sessionMask].reset_index(drop=True)
+    valDf = df[~sessionMask].reset_index(drop=True)
     return trainDf, valDf
 
 
