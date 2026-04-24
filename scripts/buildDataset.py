@@ -36,7 +36,11 @@ def main():
     p.add_argument("--maxDistanceKm", type=float, default=None,
                    help="Skip states where aircraft is farther than this (km)")
     p.add_argument("--faaDatabaseDir", type=Path, default=None,
-                   help="Path to unzipped FAA ReleasableAircraft directory for authoritative type_categories")
+                   help="Path to unzipped FAA ReleasableAircraft directory (STRONGLY RECOMMENDED). "
+                        "Without it, type_categories falls back to an imprecise keyword heuristic "
+                        "that misclassifies turboprop Pipers, Malibu variants, and others. "
+                        "Download: https://www.faa.gov/licenses_certificates/aircraft_certification/"
+                        "aircraft_registry/releasable_aircraft_download")
     p.add_argument("--clockCorrection", type=float, default=None,
                    help="Pi−server clock offset in seconds (positive = Pi was ahead). "
                         "Used for existing recordings without a stored clockSkewSecs.")
@@ -60,6 +64,14 @@ def main():
                    help="When balancing, split each label into (label × flightPhase) "
                         "buckets so approach and departure clips are kept in equal numbers.")
     args = p.parse_args()
+
+    if args.faaDatabaseDir is None:
+        print(
+            "\n[WARNING] --faaDatabaseDir not provided. type_categories will use a keyword "
+            "heuristic that misclassifies common aircraft (e.g. turboprop Pipers show up as "
+            "piston_single). Training on bad labels wastes GPU time. Download ReleasableAircraft "
+            "from faa.gov and pass --faaDatabaseDir for authoritative categories.\n"
+        )
 
     df = buildClipDataset(
         recordingsDir=args.recordingsDir,
