@@ -1,10 +1,41 @@
-sudo timedatectl set-ntp true
-python3 -m venv ./aaiVenv
-source ./aaiVenv/bin/activate
-python3 -m pip install -r requirements.txt.pi0
-sudo apt update
-sudo apt upgrade
-sudo apt install git
-git config --global user.email "duane.northcutt@gmail.com"
-git config --global user.name "J. Duane Northcutt"
-git clone git@github.com:jduanen/AircraftAudioId.git
+# Setup for Raspberry Pi (running Trixie) for the AircraftAudioId project
+
+# create venv (first time only)
+  * `python3 -m venv ./aaiVenv`
+
+# install git and configure
+  * `sudo apt update`
+  * `sudo apt upgrade`
+  * `sudo apt install git`
+  * `git config --global user.email "duane.northcutt@gmail.com"`
+  * `git config --global user.name "J. Duane Northcutt"`
+  * `git clone git@github.com:jduanen/AircraftAudioId.git`
+
+# activate venv and install packages
+  * `source ./aaiVenv/bin/activate`
+  * `python3 -m pip install -r requirements.txt.pi0`
+
+# install and configure chrony client
+  * `sudo apt update`
+  * `sudo apt install chrony`
+  * `sudo systemctl stop systemd-timesyncd`
+  * `sudo systemctl disable systemd-timesyncd`
+  * `sudo systemctl enable --now chronyd`
+  * `sudo cp /etc/chrony/chrony.conf /etc/chrony/chrony.conf.orig`
+  * `sudo ex /etc/chrony/chrony.conf`
+    - comment out default pools
+    - use Ubuntu machine as chrony server
+      * `server 192.168.166.113 iburst`
+    - allow network corrections if needed
+      * `allow 192.168.166.0/24`
+  * restart chronyd
+    - `sudo systemctl restart chronyd`
+
+# check status of chrony
+  * `chronyc sources`
+  * `chronyc tracking`
+  * `chronyc sourcestats`
+
+# for Raspberry Pi OS Lite, enable user lingering for user
+  * this allows users who are not logged in to run long-running services
+    - `loginctl enable-linger`
