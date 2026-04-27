@@ -29,7 +29,16 @@ See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for
     * MaxRate: 96000 Hz (good for wide-band analysis)
     * Spectral flatness: 0.0003
 
-* ?
+* 3D-printed enclosure
+  - images
+    ![](./assets/audioCapCase.jpg)
+    ![](./assets/audioCapExternal.jpg)
+    ![](./assets/audioCapInternal.jpg)
+  - cad files
+    ![](./cad/top.3mf)
+    ![](./assets/top.png)
+    ![](./cad/bottom.3mf)
+    ![](./assets/bottom.png)
 
 * **TODO**
   - evaluate other mic and ADC eval boards with SPI interface
