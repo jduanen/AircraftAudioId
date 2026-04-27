@@ -4,11 +4,11 @@
 
 ## Hardware
 
-### ADS-B Capture
+### ADS-B Metadata Capture (Rpi4B)
 
---> see ADSBMonitor repo
+See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for the hardware used to generate the ADS-B metadata this project's training data.
 
-### Audio Capture
+### Flyover Audio Capture (RPi0-2W)
 
 * RPi0-2W
   - added heat sink to RPi0-2W
@@ -37,12 +37,12 @@
   - design and build weatherproof enclosure
   - find proper mounting location
 
-### ADS-B/Audio Processing
+### ADS-B and Audio Processing (x86 Ubuntu Server w/ GPU)
 
 * Ubuntu machine with i7-7820X, 128GB DRAM, and GTX2080
 * ?
 
-### Model Training and Inference
+### Model Training and Inference (DGX Spark)
 
 * DGX Spark: GB10 (128GB unified DRAM, 20x ARM CPU cores, Blackwell GPU)
 
@@ -52,8 +52,11 @@ The RPi0-2W is running Trixie and uses ntp to keep its clock synchronized with t
 
 The server is running Ubuntu on a deskside Intel CPU with 128GB of DRAM, and a GTX2080 GPU.
 
+### ADS-B Metadata Capture (RPi 4B)
 
-### ADS-B Capture (RPi Zero 2W)
+See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for the software used to generate the ADS-B metadata this project's training data.
+
+### Flyover Audio Capture (RPi Zero 2W)
 
 * **`scripts/capture.py`**: script to capture and stream audio from the RPi0-2W to the server
   - options
@@ -88,7 +91,7 @@ The server is running Ubuntu on a deskside Intel CPU with 128GB of DRAM, and a G
   - also need run tests on RPi0-2W with cabling and power representative of what will be done in production
   - `src/aircraftAudio/capture/micEval.py` uses the scipy.signal.welch library
 
-### ADS-B and Audio Processing (Ubuntu Server)
+### ADS-B and Audio Processing (x86 Ubuntu Server w/ GPU)
 
 * **`scripts/exportDataset.py`**: exports recorded sessions to a training CSV for use with toolchain.py
   - uses `src/aircraftAudio/export.py` to export the data in the 'VehicleAudioDataset' format
@@ -274,7 +277,7 @@ bash scripts/syncToDGX.sh <dgx-hostname>
 
 ## Design Notes
 
-See DESIGN_NOTES.md <make link>
+See [Link to design notes](DESIGN_NOTES.md)
 
 ## TODO
 
@@ -397,3 +400,4 @@ See DESIGN_NOTES.md <make link>
     * the aurally meaningful label is the aircraft's heading relative to you, not its absolute heading
     * the data to compute this already exists
         - 'headingDeg and bearingDeg' are both in the CSV
+    --> changed definition in code
