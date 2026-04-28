@@ -1,0 +1,14 @@
+[Unit]
+Description=Capture and stream audio to the server running the recording program for AircraftAudioId
+After=network.target
+
+[Service]
+Type=simple
+User=jdn
+Group=jdn
+WorkingDirectory=/home/jdn/Code/AircraftAudioId
+ExecStart=/home/jdn/Code/AircraftAudioId/aaiVenv/bin/python /home/jdn/Code/AircraftAudioId/scripts/capture.py --host 192.168.166.113
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
