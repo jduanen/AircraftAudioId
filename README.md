@@ -32,9 +32,9 @@ See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for
 * 3D-printed enclosure
   - images
     ![](./assets/audioCapCase.jpg)
-    ![](./assets/audioCapExternal.jpg)
     ![](./assets/audioCapInternal.jpg)
-  - cad files
+    ![](./assets/audioCapExternal.jpg)
+  - CAD files: TBD
     ![](./cad/top.3mf)
     ![](./assets/top.png)
     ![](./cad/bottom.3mf)
