@@ -232,6 +232,8 @@ def inspectCsv(csvPath: Path) -> None:
                 catCounts[t] += 1
         if catCounts:
             _countBar(catCounts, "Coarse category distribution (type_categories)")
+            _histo(list(catCounts.values()), bins=min(len(catCounts), 8),
+                   label="Clip count per coarse label (imbalance view)")
     else:
         print("\n  [!] type_categories column missing — rebuild dataset with updated clipExport.py")
 
