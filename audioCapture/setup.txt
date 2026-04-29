@@ -49,7 +49,19 @@
 
 # install and enable audioCapMonitor service
   cd ${HOME}/Code/AircraftAudioId/audioCapture
+                                                          
+  sudo mkdir -p /etc/aircraftaudioid
+  sudo ex /etc/aircraftaudioid/mqtt.env
+```
+MQTT_USER=<user>
+MQTT_PASSWORD=<passwd>
+```
+  sudo chmod 600 /etc/aircraftaudioid/mqtt.env
+  sudo chown jdn:jdn /etc/aircraftaudioid/mqtt.env
+
   sudo cp etc/systemd/system/audioCapMonitor.service /etc/systemd/system/
   sudo systemctl daemon-reload
   sudo systemctl enable audioCapMonitor
   sudo systemctl start audioCapMonitor
+
+  sudo journalctl -u audioCapMonitor  # check that it's publishing
