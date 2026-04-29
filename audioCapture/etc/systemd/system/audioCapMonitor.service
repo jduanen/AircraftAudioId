@@ -8,10 +8,13 @@ Type=simple
 User=jdn
 Group=jdn
 WorkingDirectory=/home/jdn/Code/AircraftAudioId/audioCapture
+EnvironmentFile=-/etc/aircraftaudioid/mqtt.env
 ExecStart=/home/jdn/Code/AircraftAudioId/aaiVenv/bin/python \
     /home/jdn/Code/AircraftAudioId/audioCapture/scripts/audioCapMonitor.py \
     --broker 192.168.166.5 \
-    --interval 60
+    --interval 60 \
+    --user ${MQTT_USER} \
+    --password ${MQTT_PASSWORD}
 Restart=always
 RestartSec=10
 
