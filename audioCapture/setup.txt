@@ -39,3 +39,17 @@
 # for Raspberry Pi OS Lite, enable user lingering for user
   * this allows users who are not logged in to run long-running services
     - `loginctl enable-linger`
+
+# install and enable audioCap service
+  cd ${HOME}/Code/AircraftAudioId/audioCapture
+  sudo cp etc/systemd/system/audioCap.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable audioCap
+  sudo systemctl start audioCap
+
+# install and enable audioCapMonitor service
+  cd ${HOME}/Code/AircraftAudioId/audioCapture
+  sudo cp etc/systemd/system/audioCapMonitor.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable audioCapMonitor
+  sudo systemctl start audioCapMonitor
