@@ -1,6 +1,7 @@
 geopy
 ntplib
 numpy
+paho-mqtt
 requests
 scipy
 sounddevice
