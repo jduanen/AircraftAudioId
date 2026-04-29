@@ -7,7 +7,7 @@ Type=simple
 User=jdn
 Group=jdn
 WorkingDirectory=/home/jdn/Code/AircraftAudioId
-ExecStart=/home/jdn/Code/AircraftAudioId/aaiVenv/bin/python /home/jdn/Code/AircraftAudioId/scripts/capture.py --host 192.168.166.113
+ExecStart=/home/jdn/Code/AircraftAudioId/aaiVenv/bin/python /home/jdn/Code/AircraftAudioId/audioCapture/scripts/capture.py --host 192.168.166.113
 Restart=always
 
 [Install]
