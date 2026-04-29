@@ -177,9 +177,9 @@ def run(args: argparse.Namespace) -> None:
             "name": "audioCapMonitor.py"
         }
     }
-    result = client.publish(discovery_topic, payload, qos=1, retain=True)
+    result = client.publish(DISCOVERY_TOPIC, payload, qos=1, retain=True)
     if result.rc == mqtt.MQTT_ERR_SUCCESS:
-        log.info("Topic: %s; Published: %s", discovery_topic, payload)
+        log.info("Topic: %s; Published: %s", DISCOVERY_TOPIC, payload)
     else:
         log.warning("Discovery message publish failed (rc=%d), broker may be unreachable", result.rc)
         sys.exit(1)
