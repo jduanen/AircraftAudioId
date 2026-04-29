@@ -34,7 +34,7 @@ STATUS_TOPIC = "audiocap/AudioCapture/health"
 STATE_TOPIC = "sensors/AudioCapture/state"
 DISCOVERY_TOPIC = "homeassistant/sensor/AudioCapture/config"
 
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.WARNING
 
 logging.basicConfig(
     level=LOG_LEVEL,
