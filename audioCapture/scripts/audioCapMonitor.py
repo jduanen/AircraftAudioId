@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Health monitor for the Trixie audio capture Pi.
+Health monitor for the AircraftAudio audio capture on a RasPi
+
+Publish HA discovery message at startup
 
 Periodically publishes a JSON MQTT message with:
   cpuTempC, wifiRssiDbm, loadAvg{1,5,15}m, uptimeSecs, captureRunning
@@ -8,13 +10,11 @@ Periodically publishes a JSON MQTT message with:
 Usage:
     python scripts/piMonitor.py --broker <mqtt-host>
                                 [--port 1883]
-                                [--topic aircraftaudioid/trixie/health]
                                 [--interval 30]
                                 [--iface wlan0]
                                 [--user <user>] [--password <password>]
-                                [--no-retain]
 
-Run this on the Pi Zero W (Trixie).
+Run this on the Pi Zero W (running Trixie) with the audio capture HW
 """
 
 import argparse
@@ -23,14 +23,21 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
 
+STATUS_TOPIC = "audiocap/AudioCapture/health"
+STATE_TOPIC = "sensors/AudioCapture/state"
+DISCOVERY_TOPIC = "homeassistant/sensor/AudioCapture/config"
+
+LOG_LEVEL = logging.INFO
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=LOG_LEVEL,
     format="%(asctime)s %(levelname)s %(message)s",
 )
 log = logging.getLogger(__name__)
@@ -116,14 +123,10 @@ def buildArgParser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Publish Pi health metrics via MQTT")
     p.add_argument("--broker",   required=True,              help="MQTT broker hostname or IP")
     p.add_argument("--port",     type=int, default=1883,     help="MQTT broker port (default: 1883)")
-    p.add_argument("--topic",    default="aircraftaudioid/trixie/health",
-                   help="MQTT topic to publish to")
     p.add_argument("--interval", type=int, default=30,       help="Publish interval in seconds (default: 30)")
     p.add_argument("--iface",    default="wlan0",            help="WiFi interface name (default: wlan0)")
     p.add_argument("--user",     default=None,               help="MQTT username")
     p.add_argument("--password", default=None,               help="MQTT password")
-    p.add_argument("--no-retain", dest="retain", action="store_false", default=True,
-                   help="Disable MQTT retained flag")
     return p
 
 
@@ -149,7 +152,7 @@ def run(args: argparse.Namespace) -> None:
     client.reconnect_delay_set(min_delay=5, max_delay=60)
 
     log.info("Connecting to %s:%d, topic=%s, interval=%ds",
-             args.broker, args.port, args.topic, args.interval)
+             args.broker, args.port, STATUS_TOPIC, args.interval)
     try:
         client.connect(args.broker, args.port, keepalive=60)
     except Exception as exc:
@@ -157,12 +160,36 @@ def run(args: argparse.Namespace) -> None:
 
     client.loop_start()
 
+    payload = {
+        "name": "AudioCapture status",
+        "unique_id": "audiocap_status",
+        "state_topic": STATE_TOPIC,
+        "value_template": "{{ value_json.captureRunning }}",
+        "json_attributes_topic": STATE_TOPIC,
+        "json_attributes_template": "{{ value_json | tojson }}",
+        "device": {
+            "identifiers": ["audio_capture"],
+            "name": "Raspberry Pi_AudioCap status"
+        },
+        "device_class": None,
+        "state_class": None,
+        "origin": {
+            "name": "audioCapMonitor.py"
+        }
+    }
+    result = client.publish(discovery_topic, payload, qos=1, retain=True)
+    if result.rc == mqtt.MQTT_ERR_SUCCESS:
+        log.info("Topic: %s; Published: %s", discovery_topic, payload)
+    else:
+        log.warning("Discovery message publish failed (rc=%d), broker may be unreachable", result.rc)
+        sys.exit(1)
+
     while True:
         metrics = collectMetrics(args.iface)
         payload = json.dumps(metrics)
-        result = client.publish(args.topic, payload, qos=1, retain=args.retain)
+        result = client.publish(STATE_TOPIC, payload, qos=1, retain=False)
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
-            log.info("Published: %s", payload)
+            log.info("Topic: %s; Published: %s", STATE_TOPIC, payload)
         else:
             log.warning("Publish failed (rc=%d), broker may be unreachable", result.rc)
         time.sleep(args.interval)
