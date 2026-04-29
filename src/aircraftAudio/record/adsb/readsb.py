@@ -95,9 +95,11 @@ class ReadsbClient:
             if maxAltitudeFt is not None and altitudeFt > maxAltitudeFt:
                 continue
 
-            distanceKm = geodesic(
+            groundKm = geodesic(
                 (self.observerLat, self.observerLon), (lat, lon)
             ).km
+            altitudeKm = altitudeFt * 0.0003048
+            distanceKm = math.sqrt(groundKm ** 2 + altitudeKm ** 2)
             if distanceKm > radiusKm:
                 continue
 
