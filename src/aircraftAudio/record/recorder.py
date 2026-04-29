@@ -196,15 +196,16 @@ class AircraftRecordingSystem:
                 print(f"[recorder] monitoring error: {e}")
 
     def _pruneStaleAircraft(self) -> None:
-        """Remove aircraft that left the area without triggering a save."""
+        """Remove aircraft that left the area, whether or not they were saved."""
         cutoff = time.time() - MAX_RECORDING_SECS * 2
         stale = [
             icao for icao, t in self._firstSeenTime.items()
-            if t < cutoff and icao not in self._savedIcao
+            if t < cutoff
         ]
         for icao in stale:
             self._trackedAircraft.pop(icao, None)
             self._firstSeenTime.pop(icao, None)
+            self._savedIcao.discard(icao)
 
     def _processAircraft(self, state: AircraftState) -> None:
         icao24 = state.icao24
