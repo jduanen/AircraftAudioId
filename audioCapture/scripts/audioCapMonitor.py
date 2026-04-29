@@ -30,9 +30,105 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 
 
-STATUS_TOPIC = "audiocap/AudioCapture/health"
 STATE_TOPIC = "sensors/AudioCapture/state"
-DISCOVERY_TOPIC = "homeassistant/sensor/AudioCapture/config"
+
+_DEVICE = {
+    "identifiers": ["audio_capture"],
+    "name": "AudioCapture (Pi Zero W)",
+}
+_ORIGIN = {"name": "audioCapMonitor.py"}
+
+DISCOVERY_CONFIGS = [
+    (
+        "homeassistant/binary_sensor/audiocap_running/config",
+        {
+            "name": "Capture Running",
+            "unique_id": "audiocap_running",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ 'ON' if value_json.captureRunning else 'OFF' }}",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+    (
+        "homeassistant/sensor/audiocap_cpu_temp/config",
+        {
+            "name": "CPU Temperature",
+            "unique_id": "audiocap_cpu_temp",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ value_json.cpuTempC }}",
+            "unit_of_measurement": "°C",
+            "device_class": "temperature",
+            "state_class": "measurement",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+    (
+        "homeassistant/sensor/audiocap_wifi_rssi/config",
+        {
+            "name": "WiFi RSSI",
+            "unique_id": "audiocap_wifi_rssi",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ value_json.wifiRssiDbm }}",
+            "unit_of_measurement": "dBm",
+            "device_class": "signal_strength",
+            "state_class": "measurement",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+    (
+        "homeassistant/sensor/audiocap_load_1m/config",
+        {
+            "name": "Load Average 1m",
+            "unique_id": "audiocap_load_1m",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ value_json.loadAvg1m }}",
+            "state_class": "measurement",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+    (
+        "homeassistant/sensor/audiocap_load_5m/config",
+        {
+            "name": "Load Average 5m",
+            "unique_id": "audiocap_load_5m",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ value_json.loadAvg5m }}",
+            "state_class": "measurement",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+    (
+        "homeassistant/sensor/audiocap_load_15m/config",
+        {
+            "name": "Load Average 15m",
+            "unique_id": "audiocap_load_15m",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ value_json.loadAvg15m }}",
+            "state_class": "measurement",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+    (
+        "homeassistant/sensor/audiocap_uptime/config",
+        {
+            "name": "Uptime",
+            "unique_id": "audiocap_uptime",
+            "state_topic": STATE_TOPIC,
+            "value_template": "{{ value_json.uptimeSecs }}",
+            "unit_of_measurement": "s",
+            "device_class": "duration",
+            "state_class": "total_increasing",
+            "device": _DEVICE,
+            "origin": _ORIGIN,
+        },
+    ),
+]
 
 LOG_LEVEL = logging.WARNING
 
@@ -151,8 +247,8 @@ def run(args: argparse.Namespace) -> None:
 
     client.reconnect_delay_set(min_delay=5, max_delay=60)
 
-    log.info("Connecting to %s:%d, topic=%s, interval=%ds",
-             args.broker, args.port, STATUS_TOPIC, args.interval)
+    log.info("Connecting to %s:%d, state_topic=%s, interval=%ds",
+             args.broker, args.port, STATE_TOPIC, args.interval)
     try:
         client.connect(args.broker, args.port, keepalive=60)
     except Exception as exc:
@@ -160,29 +256,15 @@ def run(args: argparse.Namespace) -> None:
 
     client.loop_start()
 
-    payload = json.dumps({
-        "name": "AudioCapture status",
-        "unique_id": "audiocap_status",
-        "state_topic": STATE_TOPIC,
-        "value_template": "{{ value_json.captureRunning }}",
-        "json_attributes_topic": STATE_TOPIC,
-        "json_attributes_template": "{{ value_json | tojson }}",
-        "device": {
-            "identifiers": ["audio_capture"],
-            "name": "Raspberry Pi_AudioCap status"
-        },
-        "device_class": None,
-        "state_class": None,
-        "origin": {
-            "name": "audioCapMonitor.py"
-        }
-    })
-    result = client.publish(DISCOVERY_TOPIC, payload, qos=1, retain=True)
-    if result.rc == mqtt.MQTT_ERR_SUCCESS:
-        log.info("Topic: %s; Published: %s", DISCOVERY_TOPIC, payload)
-    else:
-        log.warning("Discovery message publish failed (rc=%d), broker may be unreachable", result.rc)
-        sys.exit(1)
+    for disc_topic, disc_payload in DISCOVERY_CONFIGS:
+        payload = json.dumps(disc_payload)
+        result = client.publish(disc_topic, payload, qos=1, retain=True)
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            log.info("Discovery published: %s", disc_topic)
+        else:
+            log.warning("Discovery publish failed (rc=%d) for %s — broker may be unreachable",
+                        result.rc, disc_topic)
+            sys.exit(1)
 
     while True:
         metrics = collectMetrics(args.iface)
