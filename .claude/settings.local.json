@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /home/jdn/Code/AircraftAudioId/hold/*.py /home/jdn/Code/AircraftAudioId/hold/Arena1/*.py)",
+      "Bash(python3 *)",
+      "Bash(pip show *)",
+      "Read(//home/jdn/.local/bin/**)",
+      "Bash(cp record/adsb/__init__.py /dev/null)",
+      "Bash(cp adsb/__init__.py          record/adsb/__init__.py)",
+      "Bash(cp adsb/readsb.py            record/adsb/readsb.py)",
+      "Bash(cp audioStream/__init__.py   record/audioStream/__init__.py)",
+      "Bash(cp audioStream/remoteStream.py record/audioStream/remoteStream.py)",
+      "Bash(python *)",
+      "Bash(find src *)",
+      "Bash(curl -s http://adsbrx.lan/data/aircraft.json)",
+      "Read(//home/jdn/.claude/**)",
+      "Read(//home/jdn/.claude/projects/**)"
+    ]
+  }
+}
