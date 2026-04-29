@@ -160,7 +160,7 @@ def run(args: argparse.Namespace) -> None:
 
     client.loop_start()
 
-    payload = {
+    payload = json.dumps({
         "name": "AudioCapture status",
         "unique_id": "audiocap_status",
         "state_topic": STATE_TOPIC,
@@ -176,7 +176,7 @@ def run(args: argparse.Namespace) -> None:
         "origin": {
             "name": "audioCapMonitor.py"
         }
-    }
+    })
     result = client.publish(DISCOVERY_TOPIC, payload, qos=1, retain=True)
     if result.rc == mqtt.MQTT_ERR_SUCCESS:
         log.info("Topic: %s; Published: %s", DISCOVERY_TOPIC, payload)
