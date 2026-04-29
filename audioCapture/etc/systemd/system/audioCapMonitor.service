@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish audiocap health metrics (CPU temp, WiFi RSSI, load, uptime, capture status) via MQTT
+After=network.target audiocap.service
+Wants=audiocap.service
+
+[Service]
+Type=simple
+User=jdn
+Group=jdn
+WorkingDirectory=/home/jdn/Code/AircraftAudioId
+ExecStart=/home/jdn/Code/AircraftAudioId/aaiVenv/bin/python \
+    /home/jdn/Code/AircraftAudioId/scripts/piMonitor.py \
+    --broker 192.168.166.5 \
+    --interval 60
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
