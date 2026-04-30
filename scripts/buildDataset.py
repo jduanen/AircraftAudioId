@@ -90,14 +90,15 @@ def main():
         print("No clips generated — check that recordings were made with the updated recorder.py.")
         return
 
+    trainDf, valDf = splitByEvent(df, trainFrac=args.trainFrac)
+
     if args.balanceClasses or args.maxPerClass is not None:
-        before = len(df)
-        df = balanceDataset(df, maxPerClass=args.maxPerClass, stratifyPhase=args.stratifyPhase)
+        before = len(trainDf)
+        trainDf = balanceDataset(trainDf, maxPerClass=args.maxPerClass, stratifyPhase=args.stratifyPhase)
         cap = args.maxPerClass or "auto"
         mode = "label × phase" if args.stratifyPhase else "label"
-        print(f"Balanced: {before} → {len(df)} clips (cap: {cap}, buckets: {mode})")
+        print(f"Balanced train: {before} → {len(trainDf)} clips (cap: {cap}, buckets: {mode})")
 
-    trainDf, valDf = splitByEvent(df, trainFrac=args.trainFrac)
     trainDf.to_csv(args.outputDir / "train.csv", index=False)
     valDf.to_csv(args.outputDir / "val.csv", index=False)
 
