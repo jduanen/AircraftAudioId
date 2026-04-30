@@ -79,11 +79,14 @@ def inspectRecordings(recordingsDir: Path) -> dict:
     durations, distances, types, singleCount, multiCount = [], [], Counter(), 0, 0
     hasStartTime, missingStartTime = 0, 0
     startTimes = []
+    nullCount = 0
 
     for p in metaPaths:
         meta = json.load(open(p))
         dur = meta.get("duration", 0.0)
         durations.append(dur)
+        if meta.get("isNullSample"):
+            nullCount += 1
 
         rawStart = meta.get("startTime")
         if rawStart:
@@ -131,6 +134,7 @@ def inspectRecordings(recordingsDir: Path) -> dict:
     print(f"\n  Has audioStartTime: {hasStartTime}  /  Missing: {missingStartTime}")
     print(f"  Single-aircraft recordings: {singleCount}")
     print(f"  Multi-aircraft recordings:  {multiCount}")
+    print(f"  Null (background) samples:  {nullCount}")
     _histo(durations, bins=8, label="Recording duration (s)")
     _histo(distances, bins=10, label="ADS-B state distance (km)")
     _countBar(types, "Aircraft type distribution")
