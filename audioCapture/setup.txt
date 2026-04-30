@@ -65,3 +65,13 @@ MQTT_PASSWORD=<passwd>
   sudo systemctl start audioCapMonitor
 
   sudo journalctl -u audioCapMonitor  # check that it's publishing
+
+# stop ipv6 churn
+  sudo ex /etc/avahi/avahi-daemon.conf
+```
+use-ipv6=no
+```
+  sudo systemctl restart avahi-daemon
+  sudo systemctl status avahi-daemon
+  sudo journalctl -ra -u avahi-daemon
+
