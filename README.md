@@ -35,7 +35,7 @@ See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for
 ### Flyover Audio Capture (RPi Zero 2W)
 
 * the `scripts/capture.py` script captures audio samples from the microphone, packetizes them, and sends them over a socket to the `scripts/record.py` script running on the server
-* see [Audio Capture Device](./audioCapture) for details
+* see [Audio Capture Device](./audioCapture) for details on the audio capture subsystem
 
 ### ADS-B and Audio Processing (x86 Ubuntu Server w/ GPU)
 
