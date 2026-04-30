@@ -276,7 +276,7 @@ def inspectCsv(csvPath: Path) -> None:
 
     # Flight phase distribution
     if "flightPhase" in df.columns:
-        phaseCounts = Counter(df["flightPhase"].tolist())
+        phaseCounts = Counter(df["flightPhase"].dropna().tolist())
         _countBar(phaseCounts, "Flight phase distribution")
 
     # Direction class distribution
