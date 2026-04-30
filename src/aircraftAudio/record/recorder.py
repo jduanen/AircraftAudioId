@@ -27,11 +27,14 @@ from .aircraftType import AircraftDatabase
 # How often the monitoring loop polls for new ADS-B data (seconds).
 POLL_INTERVAL_SECS = 1.0
 
-# Maximum recording duration cap in seconds (catches aircraft that linger).
+# Maximum duration to track an aircraft before forcing a save (seconds).
 MAX_RECORDING_SECS = 30.0
 
 # Minimum number of ADS-B states before we consider saving a recording.
 MIN_STATES_BEFORE_SAVE = 3
+
+# Default extra seconds to keep collecting states after the departure trigger fires.
+DEFAULT_POST_TRIGGER_SECS = 10.0
 
 
 @dataclass
@@ -85,6 +88,7 @@ class AircraftRecordingSystem:
         readsbUrl: str = "http://adsbrx.lan/data/aircraft.json",
         nullSampleIntervalSecs: Optional[float] = None,
         nullSampleDurationSecs: float = 10.0,
+        postTriggerSecs: float = DEFAULT_POST_TRIGGER_SECS,
     ):
         self.observerLat = observerLat
         self.observerLon = observerLon
@@ -94,6 +98,7 @@ class AircraftRecordingSystem:
         self.sampleRate = sampleRate
         self.nullSampleIntervalSecs = nullSampleIntervalSecs
         self.nullSampleDurationSecs = nullSampleDurationSecs
+        self.postTriggerSecs = postTriggerSecs
 
         self.outputDir = Path(outputDir)
         self.audioDir = self.outputDir / "audio"
@@ -117,6 +122,10 @@ class AircraftRecordingSystem:
         self._trackedAircraft: dict[str, list[dict]] = {}
         # icao24 → time of first detection (for max-duration cap)
         self._firstSeenTime: dict[str, float] = {}
+        # icao24 → time the departure trigger fired (post-trigger collection window)
+        self._triggeredAt: dict[str, float] = {}
+        # icao24 → time of most recent ADS-B state (to detect aircraft leaving range)
+        self._lastSeenTime: dict[str, float] = {}
         # Set of icao24 for which we've already saved a recording this pass.
         self._savedIcao: set[str] = set()
 
@@ -191,6 +200,7 @@ class AircraftRecordingSystem:
                     print(f"[{ts}] {len(aircraft)} aircraft within {self.radiusKm} km")
                 for state in aircraft:
                     self._processAircraft(state)
+                self._checkTriggeredTimeouts()
                 self._pruneStaleAircraft()
             except Exception as e:
                 print(f"[recorder] monitoring error: {e}")
@@ -200,16 +210,31 @@ class AircraftRecordingSystem:
         cutoff = time.time() - MAX_RECORDING_SECS * 2
         stale = [
             icao for icao, t in self._firstSeenTime.items()
-            if t < cutoff
+            if t < cutoff and icao not in self._triggeredAt
         ]
         for icao in stale:
             self._trackedAircraft.pop(icao, None)
             self._firstSeenTime.pop(icao, None)
+            self._lastSeenTime.pop(icao, None)
             self._savedIcao.discard(icao)
+
+    def _checkTriggeredTimeouts(self) -> None:
+        """Save triggered aircraft whose post-trigger window has elapsed or left range."""
+        now = time.time()
+        for icao in list(self._triggeredAt):
+            if icao in self._savedIcao:
+                continue
+            windowElapsed = now - self._triggeredAt[icao] >= self.postTriggerSecs
+            leftRange = now - self._lastSeenTime.get(icao, now) > POLL_INTERVAL_SECS * 3
+            if windowElapsed or leftRange:
+                self._saveRecording(icao)
 
     def _processAircraft(self, state: AircraftState) -> None:
         icao24 = state.icao24
         now = time.time()
+
+        if icao24 in self._savedIcao:
+            return
 
         if icao24 not in self._trackedAircraft:
             self._trackedAircraft[icao24] = []
@@ -222,9 +247,14 @@ class AircraftRecordingSystem:
             )
 
         self._trackedAircraft[icao24].append(asdict(state))
+        self._lastSeenTime[icao24] = now
+
+        if icao24 in self._triggeredAt:
+            return  # still in post-trigger window; _checkTriggeredTimeouts will save
 
         if self._shouldRecord(icao24, now):
-            self._saveRecording(icao24)
+            self._triggeredAt[icao24] = now
+            print(f"  [trigger] {state.callsign or icao24} — collecting {self.postTriggerSecs:.0f}s departure data")
 
     def _shouldRecord(self, icao24: str, now: float) -> bool:
         if icao24 in self._savedIcao:
@@ -288,10 +318,12 @@ class AircraftRecordingSystem:
     def _saveRecording(self, icao24: str) -> None:
         states = self._trackedAircraft[icao24]
         self._savedIcao.add(icao24)
+        self._triggeredAt.pop(icao24, None)
 
-        # Duration: span of tracked states + 2s tail, capped.
+        # Duration: span of tracked states + 2s tail.
+        # No hard cap — buffer is 60s so allow up to 55s to cover long approaches + departure window.
         spanSecs = states[-1]["capturedAt"] - states[0]["capturedAt"]
-        durationSecs = max(10.0, min(spanSecs + 2.0, MAX_RECORDING_SECS))
+        durationSecs = max(10.0, min(spanSecs + 2.0, 55.0))
 
         audio = self.audioStream.getBuffer(durationSecs)
         audioStartTime = self.audioStream.getBufferStartTime(durationSecs)
