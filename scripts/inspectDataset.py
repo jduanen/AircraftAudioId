@@ -18,6 +18,7 @@ import argparse
 import numpy as np
 from pathlib import Path
 from collections import Counter, defaultdict
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -77,11 +78,19 @@ def inspectRecordings(recordingsDir: Path) -> dict:
 
     durations, distances, types, singleCount, multiCount = [], [], Counter(), 0, 0
     hasStartTime, missingStartTime = 0, 0
+    startTimes = []
 
     for p in metaPaths:
         meta = json.load(open(p))
         dur = meta.get("duration", 0.0)
         durations.append(dur)
+
+        rawStart = meta.get("startTime")
+        if rawStart:
+            try:
+                startTimes.append(datetime.fromisoformat(rawStart))
+            except ValueError:
+                pass
 
         if meta.get("audioStartTime"):
             hasStartTime += 1
@@ -105,6 +114,19 @@ def inspectRecordings(recordingsDir: Path) -> dict:
             types[atype] += 1
         else:
             types["(unknown)"] += 1
+
+    if startTimes:
+        earliest = min(startTimes)
+        latest   = max(startTimes)
+        spanSecs = (latest - earliest).total_seconds()
+        totalRecSecs = sum(durations)
+        spanHrs = spanSecs / 3600
+        recHrs  = totalRecSecs / 3600
+        pct     = 100 * totalRecSecs / spanSecs if spanSecs > 0 else 0
+        print(f"\n  Earliest recording: {earliest.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  Latest recording:   {latest.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  Collection span:    {spanHrs:.1f} h")
+        print(f"  Total recorded:     {recHrs:.2f} h  ({pct:.1f}% of span)")
 
     print(f"\n  Has audioStartTime: {hasStartTime}  /  Missing: {missingStartTime}")
     print(f"  Single-aircraft recordings: {singleCount}")
