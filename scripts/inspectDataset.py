@@ -267,11 +267,12 @@ def inspectCsv(csvPath: Path) -> None:
         }
         dirCounts = Counter(df["directionClass"].astype(int).tolist())
         total = sum(dirCounts.values())
+        w = max(len(v) for v in dirLabels.values())
         print(f"\n  Direction class distribution (n={total})")
         for cls in [-1] + list(range(8)):
             c = dirCounts.get(cls, 0)
             if c:
-                print(f"  {dirLabels[cls]:<7} ({cls:2d})  {_bar(c, max(dirCounts.values()), 25)}  {c:4d} ({100*c/total:.0f}%)")
+                print(f"  {dirLabels[cls]:<{w}} ({cls:2d})  {_bar(c, max(dirCounts.values()), 25)}  {c:4d} ({100*c/total:.0f}%)")
 
     # Numeric distributions
     for col, label in [("velocityKts","Velocity (kts)"), ("altitudeFt","Altitude (ft)"),
