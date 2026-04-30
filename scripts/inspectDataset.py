@@ -174,16 +174,19 @@ def inspectAlignment(metaPaths: list[Path]) -> None:
         posFrac = (arr > 0).mean()
         print(f"    {negFrac*100:.0f}% before audio start  /  {posFrac*100:.0f}% after audio start")
 
-        # Diagnose clock skew: if all offsets are systematically negative by a large amount
+        # A positive median is expected: states land in the middle of the recording window,
+        # not at the start. Only flag a genuine clock problem:
+        #   - Large negative median: Pi clock is ahead of server (states before audio starts)
+        #   - Large negative fraction: most states fall before the audio window
+        earlyFrac = (arr < -5).mean()
         if np.median(arr) < -5:
-            print(f"\n  [!] CLOCK SKEW DETECTED: ADS-B states are captured on average "
+            print(f"\n  [!] CLOCK SKEW DETECTED: ADS-B states arrive on average "
                   f"{-np.median(arr):.0f}s BEFORE the audio window starts.")
-            print(f"      This means the Pi clock is ahead of the server clock by ~{-np.median(arr):.0f}s.")
+            print(f"      Pi clock is ahead of the server clock by ~{-np.median(arr):.0f}s.")
             print(f"      Fix: sync both clocks to NTP, then re-record.")
-            print(f"      Workaround: set a clock correction offset in align.py.")
-        elif np.median(arr) > 5:
-            print(f"\n  [!] CLOCK SKEW DETECTED: ADS-B states land {np.median(arr):.0f}s AFTER audio start.")
-            print(f"      The server clock may be ahead of the Pi clock.")
+        elif earlyFrac > 0.25:
+            print(f"\n  [!] {earlyFrac*100:.0f}% of states arrive before the audio window — "
+                  f"possible clock skew or recording trigger latency.")
 
     if perRecordingYield:
         goodYield = sum(1 for y in perRecordingYield if y > 0)
