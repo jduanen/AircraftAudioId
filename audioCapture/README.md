@@ -82,4 +82,6 @@
     * writes sample chunks over persistent TCP connection
       - format: <timeStamp> <chunkLength> <rawPCM_S16LE>
 
-### ?
+## Operation
+
+See [Data Collection Process](./DataCollection.md) for a description of the data collection and post-processing process.
