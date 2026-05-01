@@ -1,8 +1,9 @@
 # Aircraft Audio Classifier — Phase 1 Training Container
 #
 # Base: NVIDIA NGC PyTorch (multi-arch manifest; pulls arm64 automatically on
-# DGX Spark GB10). Includes CUDA-optimized PyTorch 2.x, torchaudio, cuDNN —
-# do NOT reinstall these via pip.
+# DGX Spark GB10). Includes CUDA-optimized PyTorch 2.x and cuDNN.
+# torchaudio and torchvision are NOT included in the arm64 NGC image and must
+# be installed explicitly below.
 #
 # NGC tag reference: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch
 FROM nvcr.io/nvidia/pytorch:25.01-py3
@@ -11,6 +12,12 @@ FROM nvcr.io/nvidia/pytorch:25.01-py3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libsndfile1 && \
     rm -rf /var/lib/apt/lists/*
+
+# torchaudio and torchvision are absent from the arm64 NGC image.
+# Installing without a torch pin so pip picks a version compatible with the
+# NGC torch already present; NGC torch won't be downgraded because it is
+# newer than anything on PyPI.
+RUN pip install --no-cache-dir torchaudio torchvision
 
 # Install extras not included in the NGC base.
 # Pinned to Lightning 2.x to match PyTorch 2.x API.
