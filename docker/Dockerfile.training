@@ -13,14 +13,13 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libsndfile1 && \
     rm -rf /var/lib/apt/lists/*
 
-# torchaudio and torchvision are absent from the arm64 NGC image.
-# Derive the CUDA index URL from the torch already in the container so we
-# get wheels built against the exact same CUDA version (e.g. cu126, cu128).
-# Avoids the "libcudart.so.13: cannot open shared object file" error that
-# occurs when pip defaults to the latest CUDA 13 builds from PyPI.
-RUN CUDA_TAG=$(python -c "import torch; print('cu' + torch.version.cuda.replace('.',''))") && \
-    pip install --no-cache-dir torchaudio torchvision \
-        --index-url "https://download.pytorch.org/whl/${CUDA_TAG}"
+# torchvision is needed for the ResNet-34 backbone. Only nn.Module model code
+# is used (no torchvision ops/C++ extension), so the CPU wheel is fine and
+# avoids ABI conflicts with the NGC-patched torch.
+# torchaudio is NOT installed — audio I/O and spectrogram use librosa instead,
+# which avoids the "undefined symbol: aoti_torch_abi_version" ABI mismatch that
+# occurs when any torchaudio wheel is installed against the NGC torch.
+RUN pip install --no-cache-dir torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # Install extras not included in the NGC base.
 # Pinned to Lightning 2.x to match PyTorch 2.x API.
@@ -29,6 +28,7 @@ RUN pip install --no-cache-dir \
     "pytorch-lightning>=2.3,<3.0" \
     "torchmetrics>=1.3" \
     "audiomentations>=0.38" \
+    "librosa>=0.10" \
     "pandas>=2.0" \
     "scikit-learn>=1.4"
 

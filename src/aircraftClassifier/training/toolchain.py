@@ -16,10 +16,9 @@ import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import librosa
 import torch
 import torch.nn as nn
-import torchaudio
-import torchaudio.transforms as T
 import pytorch_lightning as pl
 import torchmetrics
 from torchvision import models
@@ -92,34 +91,27 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
 
         self.augmentFn = buildAugPipeline(bgNoiseDir=bgNoiseDir) if augment else None
 
-        self.melSpec = T.MelSpectrogram(
-            sample_rate=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
-        )
-        self.toDb = T.AmplitudeToDB(top_db=80)
-
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, idx: int):
-        waveform, sr = torchaudio.load(self._filepaths[idx])
+        # librosa handles decoding, mono downmix, and resampling in one call
+        waveform, _ = librosa.load(
+            self._filepaths[idx], sr=SAMPLE_RATE, mono=True, duration=CLIP_SECS,
+        )
 
-        if sr != SAMPLE_RATE:
-            waveform = T.Resample(sr, SAMPLE_RATE)(waveform)
-
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-
-        if waveform.shape[1] < self.targetLen:
-            waveform = nn.functional.pad(waveform, (0, self.targetLen - waveform.shape[1]))
-        else:
-            waveform = waveform[:, :self.targetLen]
+        if len(waveform) < self.targetLen:
+            waveform = np.pad(waveform, (0, self.targetLen - len(waveform)))
 
         if self.augmentFn:
-            arr = waveform.numpy()[0]
-            arr = self.augmentFn(arr, sample_rate=SAMPLE_RATE)
-            waveform = torch.from_numpy(arr).unsqueeze(0)
+            waveform = self.augmentFn(waveform, sample_rate=SAMPLE_RATE)
 
-        spec = self.toDb(self.melSpec(waveform))
+        mel = librosa.feature.melspectrogram(
+            y=waveform, sr=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
+        )
+        spec = torch.from_numpy(
+            librosa.power_to_db(mel, top_db=80)
+        ).unsqueeze(0).float()
 
         typeLabel = torch.zeros(self.nClasses)
         for t in self._parsedLabels[idx]:
