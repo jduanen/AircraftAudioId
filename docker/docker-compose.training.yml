@@ -26,9 +26,12 @@ services:
       PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
     volumes:
-      # Mount at exact host path — train.csv contains absolute clip paths
-      # like /home/jdn/Code/AircraftAudioId/dataset/clips/*.wav
+      # Project source (code, scripts, pyproject.toml) — no dataset here
       - /home/jdn/Code/AircraftAudioId:/home/jdn/Code/AircraftAudioId:ro
+      # Dataset from NFS-mounted drive (overrides the symlink inside the project mount).
+      # Set AIRCRAFT_DATA_DIR on the host if the NFS mount point differs.
+      # Default: /mnt/aircraft-data/AircraftData  (standard DGX Spark fstab entry)
+      - ${AIRCRAFT_DATA_DIR:-/mnt/aircraft-data/AircraftData}/dataset:/home/jdn/Code/AircraftAudioId/dataset:ro
       # Checkpoints are written to a separate writable volume
       - ${CHECKPOINT_DIR:-/home/jdn/Code/AircraftAudioId/checkpoints}:/checkpoints
 

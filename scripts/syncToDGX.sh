@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync the project and dataset to the DGX Spark before training.
+# Sync the project to the DGX Spark before training.
 # Run this on the recording server, not on the DGX Spark.
 #
 # Usage:
@@ -10,9 +10,9 @@
 #   scripts/      — including trainDGX.sh
 #   docker/       — Dockerfile and compose file
 #   pyproject.toml
-#   dataset/      — train.csv, val.csv, and clips/*.wav
 #
 # What is NOT synced:
+#   dataset/      — lives on the NFS-exported drive; mounted by Docker at training time
 #   recordings/   — raw audio (large, not needed for training)
 #   checkpoints/  — model output lives on the DGX Spark
 #   .git/         — not needed on the training machine
@@ -39,6 +39,7 @@ rsync -avz --progress \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
     --exclude='recordings/' \
+    --exclude='dataset/' \
     --exclude='checkpoints/' \
     --exclude='*.egg-info/' \
     --exclude='.venv/' \
