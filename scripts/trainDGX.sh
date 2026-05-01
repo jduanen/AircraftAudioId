@@ -50,5 +50,4 @@ docker compose \
     --file "${COMPOSE_FILE}" \
     --project-name aircraft-training \
     run --rm \
-    aircraft-training \
-    ${TRAINING_ARGS:+${TRAINING_ARGS}}
+    aircraft-training
