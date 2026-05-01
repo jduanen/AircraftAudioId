@@ -287,6 +287,7 @@ def main():
         accelerator="auto",
         devices=1,
         precision=args.precision,
+        default_root_dir=args.outputDir,
         callbacks=[
             pl.callbacks.ModelCheckpoint(
                 dirpath=args.outputDir,
