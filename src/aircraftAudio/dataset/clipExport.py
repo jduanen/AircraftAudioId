@@ -317,8 +317,12 @@ def buildClipDataset(
         )
         if unknownClips:
             pct = 100 * unknownClips / len(df)
-            print(f"[!] {unknownClips} clips ({pct:.0f}%) have only 'unknown' type_categories — "
-                  f"consider passing --faaDatabaseDir for better labels.")
+            if faaDatabaseDir is None:
+                print(f"[!] {unknownClips} clips ({pct:.0f}%) have only 'unknown' type_categories — "
+                      f"consider passing --faaDatabaseDir for better labels.")
+            else:
+                print(f"[!] {unknownClips} clips ({pct:.0f}%) have only 'unknown' type_categories — "
+                      f"likely foreign registrations or aircraft with incomplete FAA records.")
 
     skippedUnknown = 0
     if dropUnknown and not df.empty:
