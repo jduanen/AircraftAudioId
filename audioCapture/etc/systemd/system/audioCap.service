@@ -9,7 +9,7 @@ Group=jdn
 WorkingDirectory=/home/jdn/Code/AircraftAudioId/audioCapture
 ExecStart=/home/jdn/Code/AircraftAudioId/aaiVenv/bin/python \
     /home/jdn/Code/AircraftAudioId/audioCapture/scripts/capture.py \
-    --host 192.168.166.113
+    --host 192.168.166.13
 Restart=always
 RestartSec=10
 

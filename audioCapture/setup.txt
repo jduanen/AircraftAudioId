@@ -25,7 +25,7 @@
   * `sudo ex /etc/chrony/chrony.conf`
     - comment out default pools
     - use Ubuntu machine as chrony server
-      * `server 192.168.166.113 iburst`
+      * `server 192.168.166.13 iburst`
     - allow network corrections if needed
       * `allow 192.168.166.0/24`
   * restart chronyd
