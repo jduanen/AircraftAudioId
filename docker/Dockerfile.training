@@ -14,10 +14,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # torchaudio and torchvision are absent from the arm64 NGC image.
-# Installing without a torch pin so pip picks a version compatible with the
-# NGC torch already present; NGC torch won't be downgraded because it is
-# newer than anything on PyPI.
-RUN pip install --no-cache-dir torchaudio torchvision
+# Derive the CUDA index URL from the torch already in the container so we
+# get wheels built against the exact same CUDA version (e.g. cu126, cu128).
+# Avoids the "libcudart.so.13: cannot open shared object file" error that
+# occurs when pip defaults to the latest CUDA 13 builds from PyPI.
+RUN CUDA_TAG=$(python -c "import torch; print('cu' + torch.version.cuda.replace('.',''))") && \
+    pip install --no-cache-dir torchaudio torchvision \
+        --index-url "https://download.pytorch.org/whl/${CUDA_TAG}"
 
 # Install extras not included in the NGC base.
 # Pinned to Lightning 2.x to match PyTorch 2.x API.
