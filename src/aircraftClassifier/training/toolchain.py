@@ -131,12 +131,9 @@ class VehicleSoundClassifier(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["posWeight"])
-        # posWeight not in hparams (tensor, not scalar) — register as buffer so it
-        # moves to the right device automatically and is included in state_dict.
-        if posWeight is not None:
-            self.register_buffer("posWeight", posWeight)
-        else:
-            self.posWeight = None
+        # persistent=False: posWeight is training-only; exclude from checkpoint so
+        # load_from_checkpoint doesn't hit a state_dict mismatch at eval time.
+        self.register_buffer("posWeight", posWeight, persistent=False)
 
         resnet = models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
         resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)

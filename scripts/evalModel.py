@@ -71,6 +71,7 @@ def _loadModel(checkpointPath: str, nClasses: int, device: torch.device) -> Vehi
         checkpointPath,
         nClasses=nClasses,
         map_location=device,
+        strict=False,
     )
     model.eval()
     model.to(device)
