@@ -179,6 +179,7 @@ def buildClipDataset(
 
     rows = []
     skippedNoAlignment = 0
+    skippedSilent = 0
     skippedDistance = 0
     skippedCoTrack = 0
     nullClips = 0
@@ -201,6 +202,10 @@ def buildClipDataset(
         audio, sampleRate = sf.read(str(wavPath), dtype="float32", always_2d=False)
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
+
+        if np.max(np.abs(audio)) < 1e-6:
+            skippedSilent += 1
+            continue
 
         # ── Null (background) recordings ─────────────────────────────────────
         if meta.get("isNullSample"):
@@ -342,6 +347,8 @@ def buildClipDataset(
     print(f"CSV:                  {outputCsv}")
     if skippedNoAlignment:
         print(f"Skipped (no audioStartTime — re-record): {skippedNoAlignment}")
+    if skippedSilent:
+        print(f"Skipped (silent audio — Pi not streaming): {skippedSilent}")
     if skippedDistance:
         print(f"Skipped (distance filter):   {skippedDistance}")
     if skippedCoTrack:
