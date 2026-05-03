@@ -70,6 +70,15 @@ class RemoteAudioStream:
         # Capped at 200 samples; median is used for robustness.
         self._skewSamples: deque[float] = deque(maxlen=200)
 
+        # Stream health tracking.
+        # _lastChunkTime: wall time of the most recent real PCM chunk received.
+        # _streamReadyTime: wall time when the first chunk arrived after the most
+        #   recent connection — used to detect when the circular buffer has been
+        #   filled with Pi-originating audio for a given duration.
+        # Both are reset to None on disconnect so stale buffer data is not used.
+        self._lastChunkTime: float | None = None
+        self._streamReadyTime: float | None = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -95,6 +104,25 @@ class RemoteAudioStream:
 
     def isConnected(self) -> bool:
         return self._connected
+
+    def isStreamHealthy(self, requiredDurationSecs: float = 0.0) -> bool:
+        """
+        Return True if real audio is actively arriving and the buffer contains
+        at least `requiredDurationSecs` seconds of Pi-originating audio.
+
+        A chunk must have arrived within the last 3 seconds (≈30× the nominal
+        93 ms chunk interval at 44100 Hz / 4096 frames).  If requiredDurationSecs
+        is given, the stream must also have been running long enough to overwrite
+        that many seconds of the circular buffer.
+        """
+        with self._lock:
+            lastChunk = self._lastChunkTime
+            streamStart = self._streamReadyTime
+        if lastChunk is None or time.time() - lastChunk > 3.0:
+            return False
+        if requiredDurationSecs > 0 and streamStart is not None:
+            return time.time() - streamStart >= requiredDurationSecs
+        return True
 
     def getBuffer(self, durationSecs: float) -> np.ndarray:
         """
@@ -175,6 +203,9 @@ class RemoteAudioStream:
             self._connected = True
             self._receiveLoop(clientSock)
             self._connected = False
+            with self._lock:
+                self._lastChunkTime = None
+                self._streamReadyTime = None
             print("[remoteStream] Pi disconnected — waiting for reconnect")
 
     def _receiveLoop(self, sock: socket.socket) -> None:
@@ -210,6 +241,11 @@ class RemoteAudioStream:
                 pcmBytes = self._recvExact(sock, byteLen)
                 if pcmBytes is None:
                     break
+
+                with self._lock:
+                    self._lastChunkTime = serverNow
+                    if self._streamReadyTime is None:
+                        self._streamReadyTime = serverNow
 
                 samples = np.frombuffer(pcmBytes, dtype=np.int16)
                 self._writeSamples(samples, timestamp)

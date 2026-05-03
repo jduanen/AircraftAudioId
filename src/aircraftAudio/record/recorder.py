@@ -279,7 +279,7 @@ class AircraftRecordingSystem:
     def _nullSamplingLoop(self) -> None:
         while self._running:
             time.sleep(self.nullSampleIntervalSecs)
-            if not self._trackedAircraft and self.audioStream.isConnected():
+            if not self._trackedAircraft and self.audioStream.isStreamHealthy(self.nullSampleDurationSecs):
                 now = time.time()
                 if now - self._lastNullSampleTime >= self.nullSampleIntervalSecs:
                     self._saveNullRecording()
@@ -324,6 +324,11 @@ class AircraftRecordingSystem:
         # No hard cap — buffer is 60s so allow up to 55s to cover long approaches + departure window.
         spanSecs = states[-1]["capturedAt"] - states[0]["capturedAt"]
         durationSecs = max(10.0, min(spanSecs + 2.0, 55.0))
+
+        if not self.audioStream.isStreamHealthy(durationSecs):
+            callsign = states[0].get("callsign") or icao24
+            print(f"  [skip] {callsign} — audio stream not delivering data, discarding recording")
+            return
 
         audio = self.audioStream.getBuffer(durationSecs)
         audioStartTime = self.audioStream.getBufferStartTime(durationSecs)
