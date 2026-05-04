@@ -18,16 +18,18 @@ Ground truth labels come from synchronized ADS-B telemetry data captured alongsi
 The codebase has two layers:
 
 **`src/aircraftAudio/` — structured package (active development)**
-- `recorder.py` — `AircraftRecordingSystem`: top-level orchestrator; coordinates ADS-B monitoring and audio buffering; triggers and saves recordings when a flyover is detected
-- `adsb/readsb.py` — `ReadsbClient`: polls a readsb/dump1090 JSON endpoint; returns `AircraftState` objects filtered by radius and altitude
-- `audioStream/remoteStream.py` — `RemoteAudioStream`: TCP server that receives PCM chunks from the Pi and maintains a 60-second circular buffer
-- `audioStream/piCapture.py` — `PiCapture`: runs on the Pi Zero W; captures USB mic audio and streams it over TCP
-- `aircraftType.py` — `AircraftDatabase`: looks up aircraft type strings from ICAO24 hex codes
-- `micEval.py` — `evaluateDevices`: measures noise floor, SNR, and frequency response of attached mic/ADC devices
-**`scripts/` — entry points**
+- `record/recorder.py` — `AircraftRecordingSystem`: top-level orchestrator; coordinates ADS-B monitoring and audio buffering; triggers and saves recordings when a flyover is detected; skips saves when `isStreamHealthy()` returns false
+- `record/adsb/readsb.py` — `ReadsbClient`: polls a readsb/dump1090 JSON endpoint; returns `AircraftState` objects filtered by radius and altitude
+- `record/audioStream/remoteStream.py` — `RemoteAudioStream`: TCP server that receives PCM chunks from the Pi and maintains a 60-second circular buffer; `isStreamHealthy(durationSecs)` gates recordings on active chunk delivery
+- `record/aircraftType.py` — `AircraftDatabase`: looks up aircraft type strings from ICAO24 hex codes
+- `capture/piCapture.py` — `PiCapture`: runs on the Pi Zero W; captures USB mic audio and streams it over TCP
+- `capture/micEval.py` — `evaluateDevices`: measures noise floor, SNR, and frequency response of attached mic/ADC devices
+- `dataset/clipExport.py` — `buildClipDataset`: aligns ADS-B states to audio, extracts clips, writes train/val CSVs; skips silent source WAVs (Pi not streaming)
+**`scripts/` — server-side entry points**
 - `record.py` — run on the Ubuntu server; starts `AircraftRecordingSystem`
-- `capture.py` — run on the Pi Zero W; starts `PiCapture`
 - `buildDataset.py` — run on the Ubuntu server; extracts clips and writes `train.csv` / `val.csv`
+**`audioCapture/scripts/` — Pi-side entry points**
+- `capture.py` — run on the Pi Zero W; starts `PiCapture`
 
 **`src/aircraftClassifier/` — model, training, and inference (runs on DGX Spark)**
 - `models/` — `ResNetCNN` (recommended), `CustomCNN`, `DeepVehicleCNN`, `PragmaticMultiVehicleModel`, `SetPredictionModel`
@@ -67,14 +69,15 @@ python scripts/record.py --lat <lat> --lon <lon> --radiusKm 20 --outputDir ./rec
     [--listenPort 9876] [--readsbUrl http://adsbrx.lan/data/aircraft.json]
 ```
 
-Export recordings to training CSV:
+Build training dataset from recordings:
 ```bash
-python scripts/exportDataset.py --recordingsDir ./recordings [--output dataset.csv]
+python scripts/buildDataset.py --recordingsDir ./recordings --outputDir ./dataset \
+    [--faaDatabaseDir /path/to/ReleasableAircraft] [--maxDistanceKm 15] [--dropUnknown]
 ```
 
 Evaluate microphone quality (run on Pi):
 ```bash
-python scripts/evalMics.py [--duration 10] [--outputDir ./mic_eval]
+python tools/evalMics.py [--duration 10] [--outputDir ./mic_eval]
 ```
 
 ## Data Flow and Wire Protocol
@@ -85,9 +88,10 @@ python scripts/evalMics.py [--duration 10] [--outputDir ./mic_eval]
 3. `ReadsbClient` polls `readsb` (default: `http://adsbrx.lan/data/aircraft.json`) every second.
 4. `AircraftRecordingSystem` tracks aircraft within `radiusKm`. Recording saves when:
    - last 3 distance measurements are increasing (aircraft leaving), or
-   - aircraft has been tracked for `MAX_RECORDING_SECS` (45s cap)
+   - aircraft has been tracked for `MAX_RECORDING_SECS` (30s cap)
+   - Save is skipped if `isStreamHealthy(durationSecs)` returns false (Pi not streaming)
 5. Saved output per event: `recordings/audio/<id>.wav` + `recordings/metadata/<id>.json`
-6. `scripts/buildDataset.py` uses `align.py` to map each ADS-B state to its sample position, cuts fixed-length clips, and writes `dataset/train.csv` + `dataset/val.csv` (split by flyover event to prevent leakage). CSV columns: `filepath`, `recordingId`, `vehicle_types`, `directionClass`, `velocityKts`, `altitudeFt`, `distanceKm`, `bearingDeg`, `headingDeg`.
+6. `scripts/buildDataset.py` uses `align.py` to map each ADS-B state to its sample position, cuts fixed-length clips, and writes `dataset/train.csv` + `dataset/val.csv` (split by flyover event to prevent leakage). Silent source WAVs are skipped. CSV columns: `filepath`, `recordingId`, `vehicle_types`, `type_categories`, `isSingle`, `flightPhase`, `directionClass`, `velocityKts`, `altitudeFt`, `distanceKm`, `bearingDeg`, `headingDeg`.
 7. `aircraftClassifier/training/toolchain.py` (`VehicleAudioDataset`) consumes the CSV and converts WAV clips → mel-spectrogram → multi-hot label tensor for training:
 
 ```bash

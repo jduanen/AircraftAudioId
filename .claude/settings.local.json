@@ -14,7 +14,9 @@
       "Bash(find src *)",
       "Bash(curl -s http://adsbrx.lan/data/aircraft.json)",
       "Read(//home/jdn/.claude/**)",
-      "Read(//home/jdn/.claude/projects/**)"
+      "Read(//home/jdn/.claude/projects/**)",
+      "Bash(nvidia-smi)",
+      "Bash(ip -4 addr show)"
     ]
   }
 }

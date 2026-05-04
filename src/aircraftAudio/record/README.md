@@ -38,10 +38,24 @@ seconds.
 
 **`audioStream/remoteStream.py`** — `RemoteAudioStream`  
 TCP server that receives PCM chunks from `piCapture.py` and writes them into a
-60-second circular buffer. `getBuffer(secs)` returns the most recent audio as
-float32. `getBufferStartTime(secs)` returns the Pi-side Unix timestamp of the
-first sample in the returned window — used to anchor the WAV to wall time for
-ADS-B alignment.
+60-second circular buffer. Key methods:
+
+- `getBuffer(secs)` — returns the most recent audio as float32
+- `getBufferStartTime(secs)` — returns the Pi-side Unix timestamp of the first
+  sample in the returned window, used to anchor the WAV to wall time for ADS-B
+  alignment. Uses signed circular-buffer arithmetic so the result is correct
+  whether or not the nearest timestamp entry straddles the buffer's wraparound
+  point.
+- `isStreamHealthy(requiredDurationSecs)` — returns `True` only when a real PCM
+  chunk has arrived within the last 3 seconds **and** the stream has been running
+  long enough for the circular buffer to contain `requiredDurationSecs` worth of
+  Pi-originating audio (not the initial silence). Both `_lastChunkTime` and
+  `_streamReadyTime` are reset to `None` on Pi disconnect so stale buffer data is
+  never treated as valid.
+
+`recorder.py` calls `isStreamHealthy(durationSecs)` before writing any file;
+recordings where the Pi is not streaming are silently discarded with a `[skip]`
+log line.
 
 ## Entry point
 

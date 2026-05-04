@@ -25,11 +25,16 @@ Cuts each recording into fixed-length clips centred on each in-window ADS-B
 state and writes a `dataset.csv` with one row per clip.
 
 - `buildClipDataset(recordingsDir, outputDir, clipSecs)` — extracts clips and
-  writes `<outputDir>/clips/*.wav` + `<outputDir>/dataset.csv`
+  writes `<outputDir>/clips/*.wav` + `<outputDir>/dataset.csv`. Source WAVs
+  that are entirely silent (Pi not streaming when the recording was saved) are
+  detected via `np.max(np.abs(audio)) < 1e-6` and skipped with a count
+  reported in the summary.
 - `splitByEvent(df, trainFrac)` — splits by `recordingId` (flyover event) so
   all clips from one flyover stay in the same split, preventing data leakage
 
 CSV columns: `filepath`, `recordingId`, `vehicle_types` (JSON list),
+`type_categories` (JSON list of coarse categories), `isSingle` (1 if only one
+aircraft was tracked), `flightPhase` (`approach`/`closest`/`departure`/`unknown`),
 `directionClass` (0–7), `velocityKts`, `altitudeFt`, `distanceKm`,
 `bearingDeg`, `headingDeg`, `clipOffsetSecs`
 

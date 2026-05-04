@@ -117,7 +117,8 @@ The recorder tracks aircraft by ICAO24 hex code. For each aircraft:
    - Last 3 distance measurements are strictly increasing (aircraft leaving), OR
    - Aircraft has been tracked for `MAX_RECORDING_SECS` (30 s)
 4. **Post-trigger window** — after the trigger fires, the recorder continues collecting ADS-B states for `postTriggerSecs` (default: 10 s) to capture departure geometry before saving. This balances the number of approach vs departure states per recording.
-5. **Save** — triggered by window expiry or the aircraft leaving range (no state for 3 × poll interval)
+5. **Save gate** — before writing any file, `isStreamHealthy(durationSecs)` is called on the audio stream. If the Pi has not sent a PCM chunk within the last 3 seconds, or the stream has not been running long enough to have filled the required window with real audio, the recording is silently discarded with a `[skip]` log line.
+6. **Save** — triggered by window expiry or the aircraft leaving range (no state for 3 × poll interval)
 
 ### Audio Duration
 
@@ -204,6 +205,14 @@ python scripts/buildDataset.py \
     [--stratifyPhase] \
     [--trainFrac 0.8]
 ```
+
+### Silent Recording Skip
+
+Before processing a recording, `clipExport.py` reads the source WAV and checks
+`np.max(np.abs(audio)) < 1e-6`. If true, the entire recording is skipped — this
+indicates the Pi was not streaming when the recorder saved the file (the circular
+buffer contained only its initial zero-fill). The final summary reports a count of
+skipped silent recordings separately from alignment failures.
 
 ### Per-State Clip Extraction
 
@@ -336,3 +345,4 @@ bash /home/jdn/Code/AircraftAudioId/scripts/trainDGX.sh --useCategories
 - **Co-tracked aircraft** — `isSingle=0` recordings contain audio from multiple simultaneous aircraft. Use `--maxCoTrackRatio` to exclude clips where a second aircraft was nearby at save time; note this is a recording-level filter, not a per-state filter.
 - **Unknown types** — Aircraft not in the FAA database (military, foreign-registered) get `type_categories=["unknown"]`. Use `--dropUnknown` to exclude these from training or accept them as a separate class.
 - **Old recordings** — Recordings made before `audioStartTime` and `clockSkewSecs` were added to the metadata cannot be aligned and are silently skipped by `buildDataset.py`. Use `--autoCorrectClock` as a best-effort fallback for recordings that have `audioStartTime` but no `clockSkewSecs`.
+- **Misaligned `audioStartTime` (pre-fix recordings)** — A circular-buffer signed-modulo bug in older versions of `remoteStream.py` caused `getBufferStartTime()` to return a value ~60 seconds too large roughly half the time, placing all ADS-B states far before the audio window. This bug is fixed in the current code. Recordings saved with the old code can be rescued with `--autoCorrectClock`, which re-estimates the start time from the ADS-B state timestamps rather than trusting the stored `audioStartTime`.
