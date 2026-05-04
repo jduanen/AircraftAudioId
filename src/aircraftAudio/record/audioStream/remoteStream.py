@@ -171,7 +171,8 @@ class RemoteAudioStream:
         if no timestamp data is available yet.
         """
         nSamples = int(durationSecs * self.sampleRate)
-        targetIdx = (self._bufferIndex - nSamples) % len(self._buffer)
+        bufLen = len(self._buffer)
+        targetIdx = (self._bufferIndex - nSamples) % bufLen
 
         with self._lock:
             stamps = self._bufferTimestamps
@@ -179,11 +180,24 @@ class RemoteAudioStream:
         if not stamps:
             return time.time() - durationSecs
 
-        # Find the timestamp entry whose buffer position is closest to targetIdx.
-        best = min(stamps, key=lambda t: abs(t[0] - targetIdx))
-        # Adjust for the sample offset between best and targetIdx.
-        sampleOffset = (targetIdx - best[0]) % len(self._buffer)
-        return best[1] + sampleOffset / self.sampleRate
+        # Circular distance so the nearest stamp is found correctly even when
+        # targetIdx and stamp positions straddle the buffer's wraparound point.
+        def _circDist(pos: int) -> int:
+            d = abs(pos - targetIdx)
+            return min(d, bufLen - d)
+
+        best = min(stamps, key=lambda t: _circDist(t[0]))
+
+        # Signed sample offset: positive → target is later than best in time;
+        # negative → target is earlier (further back in the buffer).
+        # Plain modulo always returns a positive value, so we fold values
+        # greater than half the buffer length to negative to get the correct
+        # direction.
+        rawOffset = (targetIdx - best[0]) % bufLen
+        if rawOffset > bufLen // 2:
+            rawOffset -= bufLen
+
+        return best[1] + rawOffset / self.sampleRate
 
     # ------------------------------------------------------------------
     # Internal
