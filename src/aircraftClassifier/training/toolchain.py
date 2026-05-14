@@ -28,7 +28,7 @@ from ..augmentation.audioAug import buildAugPipeline
 
 # Audio pipeline constants. Clips are resampled to SAMPLE_RATE on load;
 # recorder.py saves at 44100 Hz so resampling always occurs.
-SAMPLE_RATE = 22050
+SAMPLE_RATE = 44100  # 22050
 CLIP_SECS   = 5.0
 
 
