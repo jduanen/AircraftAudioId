@@ -34,6 +34,7 @@ import json
 import soundfile as sf
 import numpy as np
 import pandas as pd
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -120,6 +121,173 @@ def _extractClip(
     return clip.astype(np.float32)
 
 
+# Per-process FAA database cache: loaded once per worker the first time a
+# recording with that faaDbDir is processed, then reused for all subsequent
+# recordings in the same worker.
+_faaDbCache: dict[str, FaaDatabase] = {}
+
+
+def _processRecording(args: tuple) -> tuple[list[dict], dict[str, int]]:
+    """
+    Process one recording: align states, extract clips, return rows + counters.
+    Called in worker processes when workers > 1.
+    """
+    (
+        metaPath,
+        clipsDir,
+        clipSecs,
+        minDistanceKm,
+        maxDistanceKm,
+        clockCorrectionSecs,
+        autoCorrectClock,
+        maxCoTrackDistanceRatio,
+        faaDbDir,
+    ) = args
+
+    faaDb: Optional[FaaDatabase] = None
+    if faaDbDir is not None:
+        key = str(faaDbDir)
+        if key not in _faaDbCache:
+            _faaDbCache[key] = FaaDatabase(faaDbDir)
+        faaDb = _faaDbCache[key]
+
+    rows: list[dict] = []
+    counters: dict[str, int] = {
+        "skippedNoAlignment": 0,
+        "skippedSilent": 0,
+        "skippedDistance": 0,
+        "skippedCoTrack": 0,
+        "nullClips": 0,
+    }
+
+    with open(metaPath) as f:
+        meta = json.load(f)
+
+    recordingId = meta.get("recordingId", metaPath.stem)
+    wavPath = metaPath.parent.parent / "audio" / f"{recordingId}.wav"
+
+    if not wavPath.exists():
+        return rows, counters
+
+    if meta.get("audioStartTime") is None:
+        counters["skippedNoAlignment"] += 1
+        return rows, counters
+
+    audio, sampleRate = sf.read(str(wavPath), dtype="float32", always_2d=False)
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+
+    if np.max(np.abs(audio)) < 1e-6:
+        counters["skippedSilent"] += 1
+        return rows, counters
+
+    # ── Null (background) recordings ─────────────────────────────────────
+    if meta.get("isNullSample"):
+        clip = _extractClip(audio, sampleRate, len(audio) // 2, clipSecs)
+        clipName = f"{recordingId}_null.wav"
+        clipPath = clipsDir / clipName
+        sf.write(str(clipPath), clip, sampleRate)
+        rows.append({
+            "filepath":        str(clipPath.resolve()),
+            "recordingId":     recordingId,
+            "vehicle_types":   json.dumps([]),
+            "type_categories": json.dumps([]),
+            "isSingle":        0,
+            "flightPhase":     "null",
+            "directionClass":  -1,
+            "velocityKts":     0.0,
+            "altitudeFt":      0.0,
+            "distanceKm":      0.0,
+            "bearingDeg":      0.0,
+            "headingDeg":      0.0,
+            "clipOffsetSecs":  meta.get("duration", clipSecs) / 2,
+        })
+        counters["nullClips"] += 1
+        return rows, counters
+
+    aircraftType = meta.get("aircraftType")
+    vehicleTypes = [aircraftType] if aircraftType else []
+
+    # Resolve category: FAA ICAO24 lookup first, string heuristic fallback.
+    primaryIcao = next(
+        (s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")),
+        None,
+    )
+    if faaDb is not None and primaryIcao:
+        typeCategories = [faaDb.categoryForIcao24(primaryIcao, aircraftType)]
+    else:
+        typeCategories = [typeToCategory(t) for t in vehicleTypes]
+
+    # isSingle: true when only one aircraft was tracked in this recording.
+    allIcao = {s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")}
+    isSingle = 1 if len(allIcao) == 1 else 0
+
+    # co-tracked aircraft distances for ratio filter.
+    # These are a snapshot at recording-save time, not per-state, so the
+    # filter is conservative: any recording where a co-tracked aircraft was
+    # close at save time will have all its clips excluded.
+    coTracked = meta.get("coTrackedAircraft", [])
+
+    try:
+        states = alignedWindows(
+            metaPath,
+            windowSecs=clipSecs,
+            clockCorrectionSecs=clockCorrectionSecs,
+            autoCorrect=autoCorrectClock,
+        )
+    except ValueError:
+        counters["skippedNoAlignment"] += 1
+        return rows, counters
+
+    allDistances = [s["distanceKm"] for s in states]
+
+    for i, state in enumerate(states):
+        distKm = state.get("distanceKm", 0.0)
+        if minDistanceKm is not None and distKm < minDistanceKm:
+            counters["skippedDistance"] += 1
+            continue
+        if maxDistanceKm is not None and distKm > maxDistanceKm:
+            counters["skippedDistance"] += 1
+            continue
+
+        # Distance ratio filter: skip if any co-tracked aircraft is within
+        # (ratio × this state's distance).
+        if maxCoTrackDistanceRatio is not None and distKm > 0 and coTracked:
+            threshold = maxCoTrackDistanceRatio * distKm
+            if any(c.get("distanceKm", 999) <= threshold for c in coTracked):
+                counters["skippedCoTrack"] += 1
+                continue
+
+        centreSample = state["sampleIndex"]
+        clip = _extractClip(audio, sampleRate, centreSample, clipSecs)
+
+        clipName = f"{recordingId}_s{i:03d}.wav"
+        clipPath = clipsDir / clipName
+        sf.write(str(clipPath), clip, sampleRate)
+
+        headingDeg = state.get("headingDeg", -1.0)
+        bearingDeg = state.get("bearingDeg", 0.0)
+        dirClass = _relativeDirectionClass(headingDeg, bearingDeg) if headingDeg >= 0 else -1
+
+        rows.append({
+            "filepath":        str(clipPath.resolve()),
+            "recordingId":     recordingId,
+            "vehicle_types":   json.dumps(vehicleTypes),
+            "type_categories": json.dumps(typeCategories),
+            "isSingle":        isSingle,
+            "flightPhase":     _flightPhase(allDistances, i),
+            "directionClass":  dirClass,
+            "velocityKts":     state.get("velocityKts", 0.0),
+            "altitudeFt":      state.get("altitudeFt", 0.0),
+            "distanceKm":      distKm,
+            "bearingDeg":      state.get("bearingDeg", 0.0),
+            "headingDeg":      headingDeg,
+            "clipOffsetSecs":  state.get("timeOffsetSecs", 0.0),
+        })
+
+    return rows, counters
+
+
 def buildClipDataset(
     recordingsDir: str | Path,
     outputDir: str | Path,
@@ -132,6 +300,7 @@ def buildClipDataset(
     autoCorrectClock: bool = False,
     maxCoTrackDistanceRatio: Optional[float] = None,
     dropUnknown: bool = False,
+    workers: int = 1,
 ) -> pd.DataFrame:
     """
     Extract per-state clips from all recordings and write a dataset CSV.
@@ -141,9 +310,12 @@ def buildClipDataset(
         outputDir:       Directory to write clip WAVs into.
         clipSecs:        Duration of each extracted clip in seconds.
         outputCsv:       CSV output path.  Defaults to <outputDir>/dataset.csv.
-        minDistanceKm:        Skip states where the aircraft is farther than this.
-        maxDistanceKm:        Skip states where the aircraft is closer than this.
+        minDistanceKm:        Skip states where the aircraft is closer than this.
+        maxDistanceKm:        Skip states where the aircraft is farther than this.
         faaDatabaseDir:       Path to unzipped FAA ReleasableAircraft directory.
+                              When provided, ICAO24-based lookup is used for
+                              type_categories instead of model-string heuristics.
+                              Foreign aircraft fall back to the string heuristic.
         clockCorrectionSecs:  Manual Pi−server clock offset (seconds) for
                               recordings that pre-date the clockSkewSecs metadata
                               field.  Ignored for recordings that already have
@@ -155,11 +327,11 @@ def buildClipDataset(
                                    than (ratio × primary distance).  E.g. 2.0 means skip
                                    clips where another aircraft is within 2× the primary's
                                    distance.  None disables the filter.
-                         When provided, ICAO24-based lookup is used for
-                         type_categories instead of model-string heuristics.
-                         Foreign aircraft fall back to the string heuristic.
         dropUnknown:     If True, exclude clips whose type_categories list consists
                          entirely of "unknown" entries (null/background clips are kept).
+        workers:         Number of parallel worker processes.  Default 1 (serial).
+                         Set to os.cpu_count() or a fixed value to parallelise across
+                         recordings.  Each worker loads its own FAA database copy.
 
     Returns:
         DataFrame of all clips written.
@@ -172,144 +344,45 @@ def buildClipDataset(
     if outputCsv is None:
         outputCsv = outputDir / "dataset.csv"
 
-    faaDb: Optional[FaaDatabase] = None
     if faaDatabaseDir is not None:
+        faaDatabaseDir = Path(faaDatabaseDir)
         faaDb = FaaDatabase(faaDatabaseDir)
         print(f"FAA database loaded: {len(faaDb)} registrations")
+        # Pre-populate cache so the serial path reuses this instance.
+        _faaDbCache[str(faaDatabaseDir)] = faaDb
 
-    rows = []
+    metaPaths = sorted((recordingsDir / "metadata").glob("*.json"))
+    taskArgs = [
+        (
+            metaPath, clipsDir, clipSecs,
+            minDistanceKm, maxDistanceKm,
+            clockCorrectionSecs, autoCorrectClock,
+            maxCoTrackDistanceRatio,
+            faaDatabaseDir,
+        )
+        for metaPath in metaPaths
+    ]
+
+    if workers == 1:
+        results = [_processRecording(a) for a in taskArgs]
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(_processRecording, taskArgs))
+
+    rows: list[dict] = []
     skippedNoAlignment = 0
     skippedSilent = 0
     skippedDistance = 0
     skippedCoTrack = 0
     nullClips = 0
 
-    for metaPath in sorted((recordingsDir / "metadata").glob("*.json")):
-        with open(metaPath) as f:
-            meta = json.load(f)
-
-        recordingId = meta.get("recordingId", metaPath.stem)
-        wavPath = recordingsDir / "audio" / f"{recordingId}.wav"
-
-        if not wavPath.exists():
-            continue
-
-        if meta.get("audioStartTime") is None:
-            skippedNoAlignment += 1
-            continue
-
-        # Load audio once per recording
-        audio, sampleRate = sf.read(str(wavPath), dtype="float32", always_2d=False)
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-
-        if np.max(np.abs(audio)) < 1e-6:
-            skippedSilent += 1
-            continue
-
-        # ── Null (background) recordings ─────────────────────────────────────
-        if meta.get("isNullSample"):
-            clip = _extractClip(audio, sampleRate, len(audio) // 2, clipSecs)
-            clipName = f"{recordingId}_null.wav"
-            clipPath = clipsDir / clipName
-            sf.write(str(clipPath), clip, sampleRate)
-            rows.append({
-                "filepath":         str(clipPath.resolve()),
-                "recordingId":      recordingId,
-                "vehicle_types":    json.dumps([]),
-                "type_categories":  json.dumps([]),
-                "isSingle":         0,
-                "flightPhase":      "null",
-                "directionClass":   -1,
-                "velocityKts":      0.0,
-                "altitudeFt":       0.0,
-                "distanceKm":       0.0,
-                "bearingDeg":       0.0,
-                "headingDeg":       0.0,
-                "clipOffsetSecs":   meta.get("duration", clipSecs) / 2,
-            })
-            nullClips += 1
-            continue
-
-        aircraftType = meta.get("aircraftType")
-        vehicleTypes = [aircraftType] if aircraftType else []
-
-        # Resolve category: FAA ICAO24 lookup first, string heuristic fallback.
-        primaryIcao = next(
-            (s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")),
-            None,
-        )
-        if faaDb is not None and primaryIcao:
-            typeCategories = [faaDb.categoryForIcao24(primaryIcao, aircraftType)]
-        else:
-            typeCategories = [typeToCategory(t) for t in vehicleTypes]
-
-        # isSingle: true when only one aircraft was tracked in this recording.
-        allIcao = {s.get("icao24") for s in meta.get("aircraftStates", []) if s.get("icao24")}
-        isSingle = 1 if len(allIcao) == 1 else 0
-
-        # co-tracked aircraft distances for ratio filter.
-        # These are a snapshot at recording-save time, not per-state, so the
-        # filter is conservative: any recording where a co-tracked aircraft was
-        # close at save time will have all its clips excluded.
-        coTracked = meta.get("coTrackedAircraft", [])
-
-        try:
-            states = alignedWindows(
-                metaPath,
-                windowSecs=clipSecs,
-                clockCorrectionSecs=clockCorrectionSecs,
-                autoCorrect=autoCorrectClock,
-            )
-        except ValueError:
-            skippedNoAlignment += 1
-            continue
-
-        allDistances = [s["distanceKm"] for s in states]
-
-        for i, state in enumerate(states):
-            distKm = state.get("distanceKm", 0.0)
-            if minDistanceKm is not None and distKm < minDistanceKm:
-                skippedDistance += 1
-                continue
-            if maxDistanceKm is not None and distKm > maxDistanceKm:
-                skippedDistance += 1
-                continue
-
-            # Distance ratio filter: skip if any co-tracked aircraft is within
-            # (ratio × this state's distance).
-            if maxCoTrackDistanceRatio is not None and distKm > 0 and coTracked:
-                threshold = maxCoTrackDistanceRatio * distKm
-                if any(c.get("distanceKm", 999) <= threshold for c in coTracked):
-                    skippedCoTrack += 1
-                    continue
-
-            centreSample = state["sampleIndex"]
-            clip = _extractClip(audio, sampleRate, centreSample, clipSecs)
-
-            clipName = f"{recordingId}_s{i:03d}.wav"
-            clipPath = clipsDir / clipName
-            sf.write(str(clipPath), clip, sampleRate)
-
-            headingDeg = state.get("headingDeg", -1.0)
-            bearingDeg = state.get("bearingDeg", 0.0)
-            dirClass = _relativeDirectionClass(headingDeg, bearingDeg) if headingDeg >= 0 else -1
-
-            rows.append({
-                "filepath":         str(clipPath.resolve()),
-                "recordingId":      recordingId,
-                "vehicle_types":    json.dumps(vehicleTypes),
-                "type_categories":  json.dumps(typeCategories),
-                "isSingle":         isSingle,
-                "flightPhase":      _flightPhase(allDistances, i),
-                "directionClass":   dirClass,
-                "velocityKts":      state.get("velocityKts", 0.0),
-                "altitudeFt":       state.get("altitudeFt", 0.0),
-                "distanceKm":       distKm,
-                "bearingDeg":       state.get("bearingDeg", 0.0),
-                "headingDeg":       headingDeg,
-                "clipOffsetSecs":   state.get("timeOffsetSecs", 0.0),
-            })
+    for recRows, ctrs in results:
+        rows.extend(recRows)
+        skippedNoAlignment += ctrs["skippedNoAlignment"]
+        skippedSilent      += ctrs["skippedSilent"]
+        skippedDistance    += ctrs["skippedDistance"]
+        skippedCoTrack     += ctrs["skippedCoTrack"]
+        nullClips          += ctrs["nullClips"]
 
     df = pd.DataFrame(rows)
 

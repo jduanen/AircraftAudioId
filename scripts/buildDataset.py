@@ -63,6 +63,9 @@ def main():
     p.add_argument("--stratifyPhase", action="store_true",
                    help="When balancing, split each label into (label × flightPhase) "
                         "buckets so approach and departure clips are kept in equal numbers.")
+    p.add_argument("--workers", type=int, default=1,
+                   help="Number of parallel worker processes for clip extraction (default: 1). "
+                        "Set to os.cpu_count() or a fixed value to speed up large datasets.")
     args = p.parse_args()
 
     if args.faaDatabaseDir is None:
@@ -84,6 +87,7 @@ def main():
         autoCorrectClock=args.autoCorrectClock,
         maxCoTrackDistanceRatio=args.maxCoTrackRatio,
         dropUnknown=args.dropUnknown,
+        workers=args.workers,
     )
 
     if df.empty:
