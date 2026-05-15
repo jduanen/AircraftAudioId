@@ -32,6 +32,18 @@ SAMPLE_RATE = 44100  # 22050
 CLIP_SECS   = 5.0
 
 
+def _specAugment(spec: torch.Tensor, freqMaskF: int = 20, timeMaskT: int = 40) -> torch.Tensor:
+    spec = spec.clone()
+    _, nMels, nFrames = spec.shape
+    f = int(torch.randint(0, freqMaskF + 1, (1,)))
+    f0 = int(torch.randint(0, nMels - f + 1, (1,)))
+    spec[:, f0:f0 + f, :] = 0.0
+    t = int(torch.randint(0, timeMaskT + 1, (1,)))
+    t0 = int(torch.randint(0, nFrames - t + 1, (1,)))
+    spec[:, :, t0:t0 + t] = 0.0
+    return spec
+
+
 def buildLabelEncoder(df: pd.DataFrame, useCategories: bool = False) -> dict[str, int]:
     """
     Build a stable label-string → class-index mapping from the full dataset.
@@ -88,30 +100,32 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
         ]
         self._filepaths: list[str] = self.df["filepath"].tolist()
         self.targetLen = int(SAMPLE_RATE * CLIP_SECS)
-
+        self.augment = augment
         self.augmentFn = buildAugPipeline(bgNoiseDir=bgNoiseDir) if augment else None
 
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, idx: int):
-        # librosa handles decoding, mono downmix, and resampling in one call
-        waveform, _ = librosa.load(
-            self._filepaths[idx], sr=SAMPLE_RATE, mono=True, duration=CLIP_SECS,
-        )
+        wavPath = self._filepaths[idx]
+        specPath = Path(wavPath).parent / (Path(wavPath).stem + ".spec.npy")
 
-        if len(waveform) < self.targetLen:
-            waveform = np.pad(waveform, (0, self.targetLen - len(waveform)))
-
-        if self.augmentFn:
-            waveform = self.augmentFn(waveform, sample_rate=SAMPLE_RATE)
-
-        mel = librosa.feature.melspectrogram(
-            y=waveform, sr=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
-        )
-        spec = torch.from_numpy(
-            librosa.power_to_db(mel, top_db=80)
-        ).unsqueeze(0).float()
+        if specPath.exists():
+            spec = torch.from_numpy(np.load(specPath)).unsqueeze(0).float()
+            if self.augment:
+                spec = _specAugment(spec)
+        else:
+            waveform, _ = librosa.load(wavPath, sr=SAMPLE_RATE, mono=True, duration=CLIP_SECS)
+            if len(waveform) < self.targetLen:
+                waveform = np.pad(waveform, (0, self.targetLen - len(waveform)))
+            if self.augmentFn:
+                waveform = self.augmentFn(waveform, sample_rate=SAMPLE_RATE)
+            mel = librosa.feature.melspectrogram(
+                y=waveform, sr=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
+            )
+            spec = torch.from_numpy(
+                librosa.power_to_db(mel, top_db=80)
+            ).unsqueeze(0).float()
 
         typeLabel = torch.zeros(self.nClasses)
         for t in self._parsedLabels[idx]:
@@ -135,7 +149,7 @@ class VehicleSoundClassifier(pl.LightningModule):
         # load_from_checkpoint doesn't hit a state_dict mismatch at eval time.
         self.register_buffer("posWeight", posWeight, persistent=False)
 
-        resnet = models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
+        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
 
@@ -143,7 +157,7 @@ class VehicleSoundClassifier(pl.LightningModule):
             nn.Flatten(),
             nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5),
             nn.Linear(256, nClasses),
         )
 
