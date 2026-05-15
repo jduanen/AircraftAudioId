@@ -54,6 +54,40 @@ pip install -r requirements.txt
 pip install librosa datasets webdataset wandb mlflow transformers panns-inference hearbaseline ntplib
 ```
 
+## Training on DGX Spark
+
+**Infrastructure:** `recordings/` and `dataset/` live on an external drive at `/mnt/39358c28-f9dd-427e-882b-1b704b087086/Data2/AircraftData` on the Ubuntu recording server (192.168.166.13), NFS-exported and mounted on the DGX Spark (spark-8d0d.local, 192.168.166.7) at `/mnt/aircraft-data`. Docker mounts the dataset into the container at the same path the CSV `filepath` column uses, so no path remapping is needed.
+
+Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`), which uses the NGC PyTorch arm64 container as base. Python source changes are live after sync without image rebuild; rebuild only when `Dockerfile.training` changes.
+
+**Workflow (run on Ubuntu recording server):**
+```bash
+# 1. Sync code to DGX (excludes dataset/ and recordings/)
+bash scripts/syncToDGX.sh spark-8d0d.local
+
+# 2. Pre-compute spectrograms once (or after adding new clips)
+#    Writes <clip>.spec.npy files to the NFS dataset directory
+bash scripts/precomputeDGX.sh
+
+# 3. Train
+bash scripts/trainDGX.sh --useCategories [--batchSize 64] [--maxEpochs 50]
+
+# 4. Evaluate
+bash scripts/evalDGX.sh \
+    --checkpoint /checkpoints/best.ckpt \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv --useCategories [--tuneThresholds]
+```
+
+Checkpoints land in `./checkpoints/` on the DGX host (not synced back automatically).
+
+**TensorBoard** (from Ubuntu, port-forwarded):
+```bash
+ssh -L 6006:localhost:6006 jdn@spark-8d0d.local \
+    "python3 -m tensorboard.main --logdir /home/jdn/Code/AircraftAudioId/checkpoints/lightning_logs/ --port 6006"
+```
+Then open `http://localhost:6006`.
+
 ## Running the System
 
 **Two-machine deployment:**
@@ -92,31 +126,30 @@ python tools/evalMics.py [--duration 10] [--outputDir ./mic_eval]
    - Save is skipped if `isStreamHealthy(durationSecs)` returns false (Pi not streaming)
 5. Saved output per event: `recordings/audio/<id>.wav` + `recordings/metadata/<id>.json`
 6. `scripts/buildDataset.py` uses `align.py` to map each ADS-B state to its sample position, cuts fixed-length clips, and writes `dataset/train.csv` + `dataset/val.csv` (split by flyover event to prevent leakage). Silent source WAVs are skipped. CSV columns: `filepath`, `recordingId`, `vehicle_types`, `type_categories`, `isSingle`, `flightPhase`, `directionClass`, `velocityKts`, `altitudeFt`, `distanceKm`, `bearingDeg`, `headingDeg`.
-7. `aircraftClassifier/training/toolchain.py` (`VehicleAudioDataset`) consumes the CSV and converts WAV clips → mel-spectrogram → multi-hot label tensor for training:
-
-```bash
-python -m aircraftClassifier.training.toolchain \
-    --trainCsv dataset/train.csv --valCsv dataset/val.csv
-```
+7. `aircraftClassifier/training/toolchain.py` (`VehicleAudioDataset`) consumes the CSV and converts WAV clips → mel-spectrogram → multi-hot label tensor for training. Run via Docker on the DGX Spark using `scripts/trainDGX.sh`. Pre-compute spectrograms first with `scripts/precomputeDGX.sh` to avoid per-epoch CPU bottleneck.
 
 **NTP sync matters:** audio timestamps must align with ADS-B data. Run `sudo timedatectl set-ntp true` on the Pi; `piCapture.py` will warn if NTP offset exceeds 100 ms.
 
 ## Model Architecture
 
-ResNet-34 backbone with three task-specific heads (see `hold/Arena1/architecture.txt`, implemented in `src/aircraftClassifier/models/`):
+ResNet-18 backbone (chosen over ResNet-34 to reduce overfitting on the current small dataset) with three task-specific heads (see `hold/Arena1/architecture.txt`, implemented in `src/aircraftClassifier/models/`):
 - **Vehicle type** — multi-label sigmoid + BCEWithLogitsLoss (works for both single- and multi-aircraft clips)
 - **Direction** — 8-class softmax, masked loss (backprop only on single-vehicle samples)
 - **Speed** — scalar regression, masked loss (single-vehicle samples only)
 
-Audio pipeline: raw WAV → resample to 22050 Hz mono → mel-spectrogram → dB scale → SpecAugment → ResNet-34 (first conv adapted for 1-channel input).
+Audio pipeline: raw WAV at 44100 Hz mono (no resampling) → mel-spectrogram → dB scale → SpecAugment (train only) → ResNet-18 (first conv adapted for 1-channel input). Dropout is 0.5 in the classifier head.
 
-Mel spectrogram configs to try (parameter choice defines the information ceiling):
+Spectrograms are pre-computed and cached as `<clip>.spec.npy` alongside each WAV (`scripts/precomputeSpecs.py`). `VehicleAudioDataset.__getitem__` loads the `.npy` directly if present; SpecAugment is applied at load time for the training set. Fall back to librosa at runtime if `.npy` is absent. **Note:** torchaudio is not used — it is ABI-incompatible with the NGC arm64 PyTorch container (`aoti_torch_abi_version` undefined symbol). Use librosa for all audio I/O and spectrogram computation.
+
+Active mel spectrogram config (`SAMPLE_RATE=44100`, `CLIP_SECS=5.0`):
 ```python
-configs_to_try = [
-    {"n_mels": 64,  "n_fft": 512,  "hop_length": 256},   # higher time resolution
-    {"n_mels": 128, "n_fft": 1024, "hop_length": 512},    # balanced (start here)
-    {"n_mels": 256, "n_fft": 2048, "hop_length": 512},    # higher freq resolution
-]
+{"n_mels": 128, "n_fft": 1024, "hop_length": 512}  # ~430 time frames per clip
+```
+
+Other configs to try:
+```python
+{"n_mels": 64,  "n_fft": 512,  "hop_length": 256},   # higher time resolution
+{"n_mels": 256, "n_fft": 2048, "hop_length": 512},    # higher freq resolution
 ```
 
 Multi-vehicle decision framework (based on % of dataset with multiple aircraft):
