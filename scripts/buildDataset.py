@@ -66,6 +66,9 @@ def main():
     p.add_argument("--workers", type=int, default=1,
                    help="Number of parallel worker processes for clip extraction (default: 1). "
                         "Set to os.cpu_count() or a fixed value to speed up large datasets.")
+    p.add_argument("--skipExisting", action="store_true",
+                   help="Skip recordings already present in dataset.csv and merge new clips "
+                        "into the existing data.  Useful for incremental updates.")
     args = p.parse_args()
 
     if args.faaDatabaseDir is None:
@@ -88,6 +91,7 @@ def main():
         maxCoTrackDistanceRatio=args.maxCoTrackRatio,
         dropUnknown=args.dropUnknown,
         workers=args.workers,
+        skipExisting=args.skipExisting,
     )
 
     if df.empty:

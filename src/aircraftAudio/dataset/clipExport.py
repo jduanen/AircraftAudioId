@@ -301,6 +301,7 @@ def buildClipDataset(
     maxCoTrackDistanceRatio: Optional[float] = None,
     dropUnknown: bool = False,
     workers: int = 1,
+    skipExisting: bool = False,
 ) -> pd.DataFrame:
     """
     Extract per-state clips from all recordings and write a dataset CSV.
@@ -332,6 +333,9 @@ def buildClipDataset(
         workers:         Number of parallel worker processes.  Default 1 (serial).
                          Set to os.cpu_count() or a fixed value to parallelise across
                          recordings.  Each worker loads its own FAA database copy.
+        skipExisting:    If True and dataset.csv already exists, skip any recording
+                         whose ID is already present in that CSV and merge new clips
+                         into the existing data.  Useful for incremental updates.
 
     Returns:
         DataFrame of all clips written.
@@ -344,6 +348,11 @@ def buildClipDataset(
     if outputCsv is None:
         outputCsv = outputDir / "dataset.csv"
 
+    existingDf = pd.DataFrame()
+    if skipExisting and Path(outputCsv).exists():
+        existingDf = pd.read_csv(outputCsv)
+        print(f"Loaded {len(existingDf)} existing clips from {outputCsv}")
+
     if faaDatabaseDir is not None:
         faaDatabaseDir = Path(faaDatabaseDir)
         faaDb = FaaDatabase(faaDatabaseDir)
@@ -352,6 +361,13 @@ def buildClipDataset(
         _faaDbCache[str(faaDatabaseDir)] = faaDb
 
     metaPaths = sorted((recordingsDir / "metadata").glob("*.json"))
+
+    if skipExisting and not existingDf.empty and "recordingId" in existingDf.columns:
+        doneIds = set(existingDf["recordingId"])
+        before = len(metaPaths)
+        metaPaths = [p for p in metaPaths if p.stem not in doneIds]
+        print(f"Skipping {before - len(metaPaths)} already-processed recording(s); {len(metaPaths)} new.")
+
     taskArgs = [
         (
             metaPath, clipsDir, clipSecs,
@@ -385,6 +401,9 @@ def buildClipDataset(
         nullClips          += ctrs["nullClips"]
 
     df = pd.DataFrame(rows)
+
+    if not existingDf.empty:
+        df = pd.concat([existingDf, df], ignore_index=True)
 
     if not df.empty and "type_categories" in df.columns:
         import json as _json_inner
