@@ -94,7 +94,7 @@ python scripts/vizSpecs.py --csv dataset/train.csv
 python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --n 12
 python scripts/vizSpecs.py --csv dataset/train.csv --output specs.png  # save instead of display
 ```
-  - options: `--n` (clips to show, default 9), `--cols` (grid columns, default 3), `--category` (filter to one class), `--seed` (change for different random sample), `--output` (save to file)
+  - options: `--n` (clips to show, default 9), `--cols` (grid columns, default 3), `--category` (filter to one class), `--seed` (change for different random sample), `--output` (save to file), `--play` (click a spectrogram to play its audio)
 
 * **`scripts/inspectDataset.py`**: provides a measure of the quantity, quality, and distribution of collected training/testing samples
   - this takes an inventory of the samples in the dataset and prints information about the data dataset described in `<recordingsDir>/../dataset/dataset.csv`.
