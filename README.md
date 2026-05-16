@@ -86,6 +86,16 @@ python scripts/buildDataset.py \
   - ????dataset.csv????
   - the generated CSV files contain 'directionClass' (i.e., values 0–7, from 'headingDeg') and 'velocityKts' (for when the direction and speed heads are added to the model)
 
+* **`scripts/vizSpecs.py`**: visualize mel spectrograms from the dataset as a grid
+  - loads from pre-computed `.spec.npy` files if available, otherwise falls back to librosa
+  - e.g.,
+```bash
+python scripts/vizSpecs.py --csv dataset/train.csv
+python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --n 12
+python scripts/vizSpecs.py --csv dataset/train.csv --output specs.png  # save instead of display
+```
+  - options: `--n` (clips to show, default 9), `--cols` (grid columns, default 3), `--category` (filter to one class), `--seed` (change for different random sample), `--output` (save to file)
+
 * **`scripts/inspectDataset.py`**: provides a measure of the quantity, quality, and distribution of collected training/testing samples
   - this takes an inventory of the samples in the dataset and prints information about the data dataset described in `<recordingsDir>/../dataset/dataset.csv`.
   - e.g.,
