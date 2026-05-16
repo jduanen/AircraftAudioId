@@ -201,6 +201,10 @@ python3 scripts/buildDataset.py \
   * Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`)
   * The image is built automatically by `trainDGX.sh` on first run; rebuild only needed when `Dockerfile.training` changes
   * Checkpoints land in `./checkpoints/` on the DGX host
+  * The NVIDIA persistence daemon must be running or GPU containers will fail to start:
+```bash
+sudo systemctl enable --now nvidia-persistenced
+```
 
 7) Verify dataset quality and quantity
     - run test to check dataset
