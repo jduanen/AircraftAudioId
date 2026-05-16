@@ -39,7 +39,6 @@ rsync -avz --progress \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
     --exclude='recordings/' \
-    --exclude='dataset/' \
     --exclude='checkpoints/' \
     --exclude='*.egg-info/' \
     --exclude='.venv/' \

@@ -22,14 +22,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${PROJECT_ROOT}/checkpoints}"
-DATA_DIR="${AIRCRAFT_DATA_DIR:-/mnt/aircraft-data/AircraftData}"
 IMAGE="aircraft-audio-training:latest"
 
 docker run --rm \
     --gpus all \
     --ipc host \
     -v "${PROJECT_ROOT}:/home/jdn/Code/AircraftAudioId:ro" \
-    -v "${DATA_DIR}/dataset:/home/jdn/Code/AircraftAudioId/dataset:ro" \
     -v "${CHECKPOINT_DIR}:/checkpoints:ro" \
     --entrypoint python \
     "${IMAGE}" \

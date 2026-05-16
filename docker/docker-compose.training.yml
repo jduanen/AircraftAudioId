@@ -26,12 +26,8 @@ services:
       PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
     volumes:
-      # Project source (code, scripts, pyproject.toml) — no dataset here
+      # Project source including dataset/ (synced via syncToDGX.sh)
       - /home/jdn/Code/AircraftAudioId:/home/jdn/Code/AircraftAudioId:ro
-      # Dataset from NFS-mounted drive (overrides the symlink inside the project mount).
-      # Set AIRCRAFT_DATA_DIR on the host if the NFS mount point differs.
-      # Default: /mnt/aircraft-data/AircraftData  (standard DGX Spark fstab entry)
-      - ${AIRCRAFT_DATA_DIR:-/mnt/aircraft-data/AircraftData}/dataset:/home/jdn/Code/AircraftAudioId/dataset:ro
       # Checkpoints are written to a separate writable volume
       - ${CHECKPOINT_DIR:-/home/jdn/Code/AircraftAudioId/checkpoints}:/checkpoints
 
