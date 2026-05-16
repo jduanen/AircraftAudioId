@@ -38,9 +38,9 @@ echo "Syncing to ${DGX_HOST}:${REMOTE_PATH} ..."
 
 rsync ${OPTS} -avz --progress \
     --exclude='.git/' \
+    --exclude='.gitignore' \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
-    --exclude='recordings/' \
     --exclude='checkpoints/' \
     --exclude='*.egg-info/' \
     --exclude='*.txt' \
@@ -49,10 +49,14 @@ rsync ${OPTS} -avz --progress \
     --exclude='audioCapture/' \
     --exclude='cad/' \
     --exclude='DEPRECATED/' \
+    --exclude='data/`' \
+    --exclude='dataset_*/' \
     --exclude='docs/' \
     --exclude='etc/' \
     --exclude='hold/' \
     --exclude='inspect/' \
+    --exclude='pyproject.toml' \
+    --exclude='recordings/' \
     --exclude='sim/' \
     --exclude='tests/' \
     --exclude='tools/' \
