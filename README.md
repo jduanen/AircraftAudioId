@@ -81,6 +81,7 @@ python scripts/buildDataset.py \
       - do this so every label ends up with equal approach and departure counts
       - without this, the existing per-label balancing is unchanged
     * balanceClasses: auto-balance to rarest class count
+    * skipExisting: skip recordings already in dataset.csv and merge new clips into the existing data — use this for incremental updates when new recordings have been added
   - this produces `dataset/train.csv` and `dataset/val.csv` which plug directly into toolchain.py's VehicleAudioDataset and reference the audio samples in `clips/`
   - `toolchain.py` expects 'filepath' (path to a 5-second clip WAV) and 'vehicle_types' (JSON list, e.g., ["B738"])
   - ????dataset.csv????
