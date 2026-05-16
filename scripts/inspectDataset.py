@@ -261,6 +261,18 @@ def inspectCsv(csvPath: Path) -> None:
                 catCounts[t] += 1
         if catCounts:
             _countBar(catCounts, "Coarse category distribution (type_categories)")
+
+            minCount = min(catCounts.values())
+            worstClass = min(catCounts, key=catCounts.get)
+            print(f"\n  --balanceClasses target: {minCount} clips/class  (rarest: '{worstClass}')")
+            print(f"\n  {'Class':<25}  {'Raw':>6}  {'Balanced':>8}  {'Dropped':>8}")
+            print("  " + "─" * 53)
+            for cls, count in sorted(catCounts.items(), key=lambda x: x[1]):
+                print(f"  {cls:<25}  {count:>6}  {minCount:>8}  {count - minCount:>8}")
+            print("  " + "─" * 53)
+            totalRaw = sum(catCounts.values())
+            totalBalanced = minCount * len(catCounts)
+            print(f"  {'TOTAL':<25}  {totalRaw:>6}  {totalBalanced:>8}  {totalRaw - totalBalanced:>8}")
     else:
         print("\n  [!] type_categories column missing — rebuild dataset with updated clipExport.py")
 
