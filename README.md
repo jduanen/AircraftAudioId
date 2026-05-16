@@ -142,7 +142,7 @@ bash scripts/evalDGX.sh \
     --useCategories --tuneThresholds
 ```
 
-## Workflow
+## Workflow Steps
 
 1) Set up ADS-B capture device
   * Hardware
@@ -208,14 +208,21 @@ python3 scripts/buildDataset.py \
   * balance classes, get ~1000 samples per class (including null cases)
     - ?
 
-6) Set up DGX Spark to train the models
-  * Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`)
-  * The image is built automatically by `trainDGX.sh` on first run; rebuild only needed when `Dockerfile.training` changes
-  * Checkpoints land in `./checkpoints/` on the DGX host
-  * The NVIDIA persistence daemon must be running or GPU containers will fail to start:
+6) Pre-compute mel spectrograms
+  * Saves a `<clip>.spec.npy` file alongside each WAV in `dataset/clips/`. Training loads these directly instead of computing spectrograms on the fly, which avoids a CPU bottleneck in the DataLoader.
+  * Run once after building the dataset, and again whenever new clips are added.
+  * On the recording server (CPU only, no GPU needed):
 ```bash
-sudo systemctl enable --now nvidia-persistenced
+python scripts/precomputeSpecs.py \
+    --trainCsv dataset/train.csv \
+    --valCsv dataset/val.csv \
+    [--workers 16]   # parallelism; default 16
 ```
+  * On the DGX Spark (inside the training Docker image):
+```bash
+bash scripts/precomputeDGX.sh
+```
+  * The `.spec.npy` files are written alongside the WAVs and are included in the rsync to the DGX. Training falls back to computing spectrograms via librosa at runtime if a `.npy` file is missing.
 
 7) Verify dataset quality and quantity
     - run test to check dataset
@@ -225,17 +232,25 @@ sudo systemctl enable --now nvidia-persistenced
 python scripts/inspectDataset.py --recordingsDir ./recordings --datasetCsv ./dataset/dataset.csv
 ```
 
-8) Training
+8) Set up DGX Spark to train the models
+  * Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`)
+  * The image is built automatically by `trainDGX.sh` on first run; rebuild only needed when `Dockerfile.training` changes
+  * Checkpoints land in `./checkpoints/` on the DGX host
+  * The NVIDIA persistence daemon must be running or GPU containers will fail to start:
+```bash
+sudo systemctl enable --now nvidia-persistenced
+```
+
+9) Training
   * Phase 1: classify by propulsion type, engine count, and wing type
 ```bash
 bash scripts/syncToDGX.sh spark-8d0d.local
-bash scripts/precomputeDGX.sh   # once, or after adding new clips
 bash scripts/trainDGX.sh --useCategories
 ```
   * Phase 2: direction of travel (8 cardinal directions) — not yet implemented
   * Phase 3: speed estimation — not yet implemented
 
-9) Evaluation
+10) Evaluation
 ```bash
 bash scripts/evalDGX.sh \
     --checkpoint /checkpoints/best.ckpt \
@@ -245,7 +260,7 @@ bash scripts/evalDGX.sh \
 ```
   - prints per-class AP, F1, precision, recall, and support; macro mAP and F1 summary
 
-10) Inference
+11) Inference
   - ?
 
 ## Design Notes
