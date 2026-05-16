@@ -43,8 +43,6 @@ rsync ${OPTS} -avz --progress \
     --exclude='recordings/' \
     --exclude='checkpoints/' \
     --exclude='*.egg-info/' \
-    --exclude='.venv/' \
-    --exclude='venv/' \
     --exclude='*.txt' \
     --exclude='*.md' \
     --exclude='assets/' \
