@@ -216,7 +216,8 @@ python3 scripts/buildDataset.py \
 python scripts/precomputeSpecs.py \
     --trainCsv dataset/train.csv \
     --valCsv dataset/val.csv \
-    [--workers 16]   # parallelism; default 16
+    [--workers 16]        # parallelism; default 16
+    [--skipExisting]      # skip clips that already have a .spec.npy; default is to recompute all
 ```
   * On the DGX Spark (inside the training Docker image):
 ```bash
