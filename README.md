@@ -104,24 +104,32 @@ python3 scripts/inspectDataset.py --recordingsDir <path>
     * a histogram of the distribution of coarse labels
     * an indication of clock skew between the devices
 
-### Model Training (DGX Sparc)
+### Model Training (DGX Spark)
 
-* Phase 1: Classify by vehicle type (multi-label, single-aircraft clips)
-  - the coarse categories in typeCategories.py are the current working labels:
-    * piston_single, piston_twin, turboprop, helicopter, business_jet, regional_jet, narrowbody_jet, widebody_jet
-  - ????
+Training runs inside a Docker container on the DGX Spark using scripts in `scripts/`. All commands below are run from the Ubuntu recording server unless noted.
+
+* Phase 1: Classify by vehicle type (multi-label)
+  - coarse category labels: `piston_single`, `piston_twin`, `turboprop`, `helicopter`, `business_jet`, `regional_jet`, `narrowbody_jet`, `widebody_jet`
+  - model: ResNet-18 backbone, 1-channel mel spectrogram input, multi-label sigmoid head, BCEWithLogitsLoss with pos_weight balancing, dropout 0.5, SpecAugment
+  - code: `src/aircraftClassifier/training/toolchain.py` (`VehicleAudioDataset` + `VehicleSoundClassifier`)
+
 ```bash
-python -m aircraftClassifier.training.toolchain \
-      --trainCsv dataset/train.csv \
-      --valCsv dataset/val.csv \
-      --useCategories \           # classify based on coarse type labels
-      --bgNoiseDir dataset/clips  # use null clips as background noise source
+# Sync project + dataset to DGX
+bash scripts/syncToDGX.sh spark-8d0d.local
+
+# Pre-compute spectrograms once (or after adding new clips)
+bash scripts/precomputeDGX.sh
+
+# Train
+bash scripts/trainDGX.sh --useCategories
+
+# Evaluate a checkpoint
+bash scripts/evalDGX.sh \
+    --checkpoint /checkpoints/best.ckpt \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv \
+    --useCategories --tuneThresholds
 ```
-  - code used in Phase 1 training
-    * `training/toolchain.py`: the entry point
-      - contains VehicleAudioDataset and VehicleSoundClassifier inline
-    * `augmentation/audioAug.py`: the only import from toolchain.py
-      - provides buildAugPipeline()
 
 ## Workflow
 
@@ -190,9 +198,9 @@ python3 scripts/buildDataset.py \
     - ?
 
 6) Set up DGX Spark to train the models
-  * ?do everything in containers, install toolchain (preferrably NVIDIA versions)
-  * ?
-  * ?
+  * Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`)
+  * The image is built automatically by `trainDGX.sh` on first run; rebuild only needed when `Dockerfile.training` changes
+  * Checkpoints land in `./checkpoints/` on the DGX host
 
 7) Verify dataset quality and quantity
     - run test to check dataset
@@ -203,33 +211,24 @@ python scripts/inspectDataset.py --recordingsDir ./recordings --datasetCsv ./dat
 ```
 
 8) Training
-  * Phase 1: classify single aircraft by propulsion type, engine count, and wing type
-    - coarse aircraft category labels:
-      * piston_single
-      * piston_twin
-      * turboprop
-      * helicopter
-      * business_jet
-      * regional_jet
-      * narrowbody_jet
-      * widebody_jet
-  - see TRAINING.md <add link>
-    * build a dataset on the server machine
-```bash                                         
-bash scripts/syncToDGX.sh <dgx-hostname>
-```                                           
-    * start the training on the DGX Spark
+  * Phase 1: classify by propulsion type, engine count, and wing type
 ```bash
-  bash /home/jdn/Code/AircraftAudioId/scripts/trainDGX.sh --useCategories
-```              
-  * Phase 2: ????
-    - ?
-  * Phase 3: ????
-    - ?
-    - ?try to classify on engine type (e.g., GE GE90-115B, Lycoming IO-360-L2A, etc.)
+bash scripts/syncToDGX.sh spark-8d0d.local
+bash scripts/precomputeDGX.sh   # once, or after adding new clips
+bash scripts/trainDGX.sh --useCategories
+```
+  * Phase 2: direction of travel (8 cardinal directions) — not yet implemented
+  * Phase 3: speed estimation — not yet implemented
 
-9) Validation
-  - ?
+9) Evaluation
+```bash
+bash scripts/evalDGX.sh \
+    --checkpoint /checkpoints/best.ckpt \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv \
+    --useCategories --tuneThresholds
+```
+  - prints per-class AP, F1, precision, recall, and support; macro mAP and F1 summary
 
 10) Inference
   - ?
@@ -262,7 +261,7 @@ See [Link to design notes](DESIGN_NOTES.md)
   * currently users who forget '--faaDatabaseDir' will silently get bad training labels
 
 4. ImageNet ResNet is suboptimal for audio; PANNs/AST code exists but is unused
-  * 'toolchain.py':148 initializes a ResNet-34 model with ResNet34_Weights.DEFAULT (ImageNet), then replaces conv1 with a fresh 1-channel layer
+  * 'toolchain.py' uses ResNet-18 with ImageNet weights, with conv1 replaced by a fresh 1-channel layer
     - this results in losing the pretrained stem entirely
   * 'src/aircraftClassifier/pretrained' has PANNs and AST integration written but unused
     - PANNs (pretrained on AudioSet, which includes aircraft sounds) typically give a 10–20% F1 lift over ImageNet-initialized CNNs on small aviation datasets
@@ -274,16 +273,13 @@ See [Link to design notes](DESIGN_NOTES.md)
   * fix: move the lookup out of the hot path
     - resolve types lazily in buildDataset.py or via a background thread that pre-populates the cache
 
-6. Mel spectrogram is computed on CPU, per-sample, in the DataLoader
-  * 'VehicleAudioDataset.__getitem__' (toolchain.py:121) does the STFT/mel/dB on the CPU
-    - it's currently done on the server, which also has a GPU that could be used
-    - this would also be a problem if it were done on the DGX Spark, which also has a GPU
-  * fix: either pre-compute spectrograms once (e.g., with 'src/aircraftClassifier/pretrained/precomputeSpectrograms.py') or move mel to GPU as a batched transform
-   - on a small dataset the I/O savings are significant
+6. ~~Mel spectrogram is computed on CPU, per-sample, in the DataLoader~~ — **resolved**
+  * `scripts/precomputeSpecs.py` pre-computes and caches `<clip>.spec.npy` alongside each WAV
+  * `VehicleAudioDataset.__getitem__` loads `.npy` directly; SpecAugment is applied at load time for the training set
 
-7. No inference/evaluation tooling
-  * there's no script to run a trained checkpoint against a new WAV, no per-class threshold tuning, no confusion matrix or per-class AP report
-  * for multi-label problems with heavy class imbalance, per-class threshold calibration typically adds +5–10% F1 with no retraining
+7. ~~No inference/evaluation tooling~~ — **resolved**
+  * `scripts/evalModel.py` provides per-class AP/F1/precision/recall table, optional per-class threshold tuning, and single-WAV inference
+  * `scripts/evalDGX.sh` runs it inside the training Docker image on the DGX Spark
 
 8. Null samples are not being used for background noise augmentation
   * null (aircraft-free) clips are collected but '--bgNoiseDir' is only a manual opt-in
@@ -309,9 +305,9 @@ See [Link to design notes](DESIGN_NOTES.md)
   * for Objective 4 (i.e., multi-aircraft), co-tracked aircraft's types should appear in vehicle_types of each other's clips (or clips should be shared)
     - this undercuts the multi-label framing
 12. Inline model re-implemented; library version ignored
-  * 'src/aircraftClassifier/models/resNetCNN.py' defines the same architecture that 'toolchain.py':148 re-implements inline
+  * 'src/aircraftClassifier/models/resNetCNN.py' defines the same architecture that 'toolchain.py' re-implements inline (currently ResNet-18)
   * fix: either delete the unused file or route training through it
-    - See the earlier analysis: only 'toolchain.py' + 'augmentation/audioAug.py' are imported from the classifier package
+    - only 'toolchain.py' + 'augmentation/audioAug.py' are imported from the classifier package
 
 13. '--useCategories' should default to 'True'
   * the whole dataset pipeline is designed around categories (typeCategories.py, FAA lookup, type_categories column)

@@ -56,7 +56,7 @@ pip install librosa datasets webdataset wandb mlflow transformers panns-inferenc
 
 ## Training on DGX Spark
 
-**Infrastructure:** `recordings/` and `dataset/` live on an external drive at `/mnt/39358c28-f9dd-427e-882b-1b704b087086/Data2/AircraftData` on the Ubuntu recording server (192.168.166.13), NFS-exported and mounted on the DGX Spark (spark-8d0d.local, 192.168.166.7) at `/mnt/aircraft-data`. Docker mounts the dataset into the container at the same path the CSV `filepath` column uses, so no path remapping is needed.
+**Infrastructure:** The DGX Spark (spark-8d0d.local, 192.168.166.7) receives the full project including `dataset/` via rsync from the Ubuntu recording server (192.168.166.13). Docker mounts the project directory read-only; `precomputeDGX.sh` mounts `dataset/` writably so it can write `.spec.npy` files.
 
 Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`), which uses the NGC PyTorch arm64 container as base. Python source changes are live after sync without image rebuild; rebuild only when `Dockerfile.training` changes.
 
