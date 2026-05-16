@@ -6,13 +6,13 @@
 #   bash scripts/syncToDGX.sh <dgx-hostname-or-ip>
 #
 # What is synced:
+#   dataset/      — after running buildDataset.py
 #   src/          — classifier package
 #   scripts/      — including trainDGX.sh
 #   docker/       — Dockerfile and compose file
 #   pyproject.toml
 #
 # What is NOT synced:
-#   dataset/      — lives on the NFS-exported drive; mounted by Docker at training time
 #   recordings/   — raw audio (large, not needed for training)
 #   checkpoints/  — model output lives on the DGX Spark
 #   .git/         — not needed on the training machine
@@ -32,9 +32,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REMOTE_PATH="jdn@${DGX_HOST}:/home/jdn/Code/AircraftAudioId/"
 
+OPTS=""
+
 echo "Syncing to ${DGX_HOST}:${REMOTE_PATH} ..."
 
-rsync -avz --progress \
+rsync ${OPTS} -avz --progress \
     --exclude='.git/' \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
@@ -43,6 +45,19 @@ rsync -avz --progress \
     --exclude='*.egg-info/' \
     --exclude='.venv/' \
     --exclude='venv/' \
+    --exclude='*.txt' \
+    --exclude='*.md' \
+    --exclude='assets/' \
+    --exclude='audioCapture/' \
+    --exclude='cad/' \
+    --exclude='DEPRECATED/' \
+    --exclude='docs/' \
+    --exclude='etc/' \
+    --exclude='hold/' \
+    --exclude='inspect/' \
+    --exclude='sim/' \
+    --exclude='tests/' \
+    --exclude='tools/' \
     --filter='protect checkpoints/' \
     "${PROJECT_ROOT}/" \
     "${REMOTE_PATH}"
