@@ -201,6 +201,7 @@ def _processRecording(args: tuple) -> tuple[list[dict], dict[str, int]]:
             "bearingDeg":      0.0,
             "headingDeg":      0.0,
             "clipOffsetSecs":  meta.get("duration", clipSecs) / 2,
+            "clipRms":         float(np.sqrt(np.mean(clip ** 2))),
         })
         counters["nullClips"] += 1
         return rows, counters
@@ -283,6 +284,7 @@ def _processRecording(args: tuple) -> tuple[list[dict], dict[str, int]]:
             "bearingDeg":      state.get("bearingDeg", 0.0),
             "headingDeg":      headingDeg,
             "clipOffsetSecs":  state.get("timeOffsetSecs", 0.0),
+            "clipRms":         float(np.sqrt(np.mean(clip ** 2))),
         })
 
     return rows, counters
@@ -494,7 +496,9 @@ def balanceDataset(
 
     Multi-label clips count toward every label they carry.  The greedy
     algorithm processes buckets from most-common to least-common, dropping
-    randomly from each over-represented bucket in turn.
+    the lowest-quality clips first.  Quality is measured by clipRms (RMS
+    amplitude of the clip WAV) when present in df; falls back to random
+    selection if the column is absent.
 
     Args:
         df:             Dataset DataFrame with a type_categories JSON column.
@@ -504,13 +508,15 @@ def balanceDataset(
                         flightPhase column in df.  Ensures approach and
                         departure clips are kept in equal numbers per class.
         labelCol:       Column containing JSON-encoded label lists.
-        seed:           RNG seed for reproducible downsampling.
+        seed:           RNG seed for reproducible downsampling (used only
+                        when clipRms is absent and selection is random).
 
     Returns:
         Downsampled DataFrame, index reset.
     """
     rng = np.random.default_rng(seed)
     parsed = df[labelCol].apply(json.loads).tolist()
+    hasRms = "clipRms" in df.columns
 
     phases: list[str] = (
         df["flightPhase"].tolist()
@@ -541,7 +547,12 @@ def balanceDataset(
         currentIndices = [i for i in buckets[key] if keepMask[i]]
         excess = len(currentIndices) - maxPerClass
         if excess > 0:
-            toDrop = rng.choice(currentIndices, excess, replace=False)
+            if hasRms:
+                # Keep highest-RMS clips; drop the quiet tail.
+                ranked = sorted(currentIndices, key=lambda i: df.iloc[i]["clipRms"], reverse=True)
+                toDrop = ranked[maxPerClass:]
+            else:
+                toDrop = rng.choice(currentIndices, excess, replace=False)
             keepMask[toDrop] = False
 
     return df[keepMask].reset_index(drop=True)
