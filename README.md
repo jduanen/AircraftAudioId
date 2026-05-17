@@ -91,11 +91,26 @@ python scripts/buildDataset.py \
   - loads from pre-computed `.spec.npy` files if available, otherwise falls back to librosa
   - e.g.,
 ```bash
+# show a random 3×3 grid from the training set
 python scripts/vizSpecs.py --csv dataset/train.csv
-python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --n 12
-python scripts/vizSpecs.py --csv dataset/train.csv --output specs.png  # save instead of display
+
+# show 12 helicopter clips in a 4-column grid
+python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --n 12 --cols 4
+
+# save to a PNG instead of displaying
+python scripts/vizSpecs.py --csv dataset/train.csv --output specs.png
+
+# interactive mode: click a spectrogram to play its audio (requires sounddevice + soundfile)
+python scripts/vizSpecs.py --csv dataset/train.csv --play
 ```
-  - options: `--n` (clips to show, default 9), `--cols` (grid columns, default 3), `--category` (filter to one class), `--seed` (change for different random sample), `--output` (save to file), `--play` (click a spectrogram to play its audio)
+  - options:
+    * `--csv` (required): path to `train.csv` or `val.csv`
+    * `--n` (default 9): number of clips to display
+    * `--cols` (default 3): grid columns
+    * `--category`: filter to a single coarse category (e.g. `helicopter`, `piston_single`)
+    * `--seed` (default 42): random seed — change to see a different sample
+    * `--output`: save to file instead of displaying
+    * `--play`: enable click-to-play audio; clicking a spectrogram plays the corresponding WAV
 
 * **`scripts/inspectDataset.py`**: provides a measure of the quantity, quality, and distribution of collected training/testing samples
   - this takes an inventory of the samples in the dataset and prints information about the data dataset described in `<recordingsDir>/../dataset/dataset.csv`.
