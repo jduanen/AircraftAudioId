@@ -80,12 +80,11 @@ python scripts/buildDataset.py \
       - e.g., (narrowbody_jet, approach), (narrowbody_jet, departure), (piston_single, approach), etc.
       - do this so every label ends up with equal approach and departure counts
       - without this, the existing per-label balancing is unchanged
-    * balanceClasses: auto-balance to rarest class count
+    * balanceClasses: auto-balance to rarest class count; when downsampling, keeps the highest-RMS clips per class (loudest = best signal quality) rather than selecting randomly
     * skipExisting: skip recordings already in dataset.csv and merge new clips into the existing data — use this for incremental updates when new recordings have been added
   - this produces `dataset/train.csv` and `dataset/val.csv` which plug directly into toolchain.py's VehicleAudioDataset and reference the audio samples in `clips/`
   - `toolchain.py` expects 'filepath' (path to a 5-second clip WAV) and 'vehicle_types' (JSON list, e.g., ["B738"])
-  - ????dataset.csv????
-  - the generated CSV files contain 'directionClass' (i.e., values 0–7, from 'headingDeg') and 'velocityKts' (for when the direction and speed heads are added to the model)
+  - the generated CSV files contain: `directionClass` (0–7, from `headingDeg`), `velocityKts`, `distanceKm`, `clipRms` (RMS amplitude of the clip — used as a quality score when balancing classes)
 
 * **`scripts/vizSpecs.py`**: visualize mel spectrograms from the dataset as a grid
   - loads from pre-computed `.spec.npy` files if available, otherwise falls back to librosa
