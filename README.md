@@ -129,6 +129,35 @@ python3 scripts/inspectDataset.py --recordingsDir <path>
     * a histogram of the distribution of coarse labels
     * an indication of clock skew between the devices
 
+* **`scripts/icaoLookup.py`**: list unique ICAO24 hex codes seen across all recorded metadata, with optional sample counts, track counts, and FAA registration details
+  - e.g.,
+```bash
+# basic list of codes and most-common callsigns
+python3 scripts/icaoLookup.py --recordingsDir ./recordings
+
+# with raw sample count and per-track sighting count
+python3 scripts/icaoLookup.py --recordingsDir ./recordings --counts --tracks
+
+# with FAA registration info, sorted by most-recorded
+python3 scripts/icaoLookup.py --recordingsDir ./recordings --counts --tracks \
+    --faa --faaDatabaseDir ./data/ReleasableAircraft --sortBy samples
+
+# with extended FAA fields
+python3 scripts/icaoLookup.py --recordingsDir ./recordings --counts --tracks \
+    --faa --faaDatabaseDir ./data/ReleasableAircraft \
+    --fields nNumber,manufacturer,model,typeAcft,typeEng,noEngines,noSeats
+```
+  - options:
+    * `--counts`: show raw sample count (total number of ADS-B state entries per code)
+    * `--tracks`: show per-track sighting count
+    * `--trackInterval <hours>` (default 1.0): minimum gap in hours between recordings to count as a new track
+    * `--faa`: show FAA registration info (requires `--faaDatabaseDir`)
+    * `--faaDatabaseDir <path>`: path to unzipped FAA ReleasableAircraft directory
+    * `--fields <list>` (default: `nNumber,manufacturer,model,category`): comma-separated FAA fields; available: `nNumber`, `manufacturer`, `model`, `category`, `typeAcft`, `typeEng`, `noEngines`, `noSeats`
+    * `--sortBy` (default `icao24`): sort by `icao24`, `samples`, `tracks`, or `callsign`
+  - **CALLSIGN** is the most frequently seen callsign for each code (stable for N-number aircraft; varies for airline flights)
+  - foreign registrations not in the FAA database show blank FAA columns
+
 ### Model Training (DGX Spark)
 
 Training runs inside a Docker container on the DGX Spark using scripts in `scripts/`. All commands below are run from the Ubuntu recording server unless noted.
