@@ -179,8 +179,16 @@ bash scripts/syncToDGX.sh spark-8d0d.local
 # Pre-compute spectrograms once (or after adding new clips)
 bash scripts/precomputeDGX.sh
 
-# Train
+# Train (basic)
 bash scripts/trainDGX.sh --useCategories
+
+# Train with backbone freezing to combat overfitting (recommended for small datasets)
+bash scripts/trainDGX.sh \
+    --useCategories \
+    --freezeBackbone \
+    --unfreezeEpoch 20 \
+    --weightDecay 0.05 \
+    --maxEpochs 60
 
 # Evaluate a checkpoint
 bash scripts/evalDGX.sh \
@@ -189,6 +197,12 @@ bash scripts/evalDGX.sh \
     --valCsv dataset/val.csv \
     --useCategories --tuneThresholds
 ```
+
+  **Overfitting controls** (all passed via `trainDGX.sh`):
+  - `--freezeBackbone`: freeze conv1 through layer3; only layer4 + classifier are trained. Strongest single lever for small datasets — prevents the backbone from memorizing training examples. Reduces trainable parameters from ~11M to ~2M.
+  - `--unfreezeEpoch N`: at epoch N, unfreeze the full backbone for end-to-end fine-tuning. The cosine LR schedule has decayed by then, so fine-tuning is gentle. Typical value: 15–25 (after early epochs establish a good classifier head).
+  - `--weightDecay`: AdamW L2 penalty (default: 0.01). Increase to 0.05–0.1 for additional regularization.
+  - `--noPosWeight`: disable automatic pos_weight balancing (not recommended unless the dataset is already balanced).
 
 ## Workflow Steps
 
@@ -294,7 +308,12 @@ sudo systemctl enable --now nvidia-persistenced
   * Phase 1: classify by propulsion type, engine count, and wing type
 ```bash
 bash scripts/syncToDGX.sh spark-8d0d.local
-bash scripts/trainDGX.sh --useCategories
+bash scripts/trainDGX.sh \
+    --useCategories \
+    --freezeBackbone \
+    --unfreezeEpoch 20 \
+    --weightDecay 0.05 \
+    --maxEpochs 60
 ```
   * Phase 2: direction of travel (8 cardinal directions) — not yet implemented
   * Phase 3: speed estimation — not yet implemented
