@@ -142,6 +142,9 @@ class VehicleSoundClassifier(pl.LightningModule):
         lr: float = 1e-4,
         maxEpochs: int = 50,
         posWeight: torch.Tensor | None = None,
+        weightDecay: float = 0.01,
+        freezeBackbone: bool = False,
+        unfreezeEpoch: int | None = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["posWeight"])
@@ -152,6 +155,14 @@ class VehicleSoundClassifier(pl.LightningModule):
         resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
+
+        # Freeze conv1..layer3 (indices 0-6); keep layer4 (7) + avgpool (8) trainable.
+        # Unfreezes fully at unfreezeEpoch if set.
+        if freezeBackbone:
+            for i, child in enumerate(self.backbone.children()):
+                if i < 7:
+                    for param in child.parameters():
+                        param.requires_grad = False
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
@@ -197,8 +208,19 @@ class VehicleSoundClassifier(pl.LightningModule):
         self.log("val_f1",  self.valF1,  on_epoch=True, prog_bar=True)
         self.log("val_mAP", self.valMap, on_epoch=True)
 
+    def on_train_epoch_start(self):
+        if (
+            self.hparams.unfreezeEpoch is not None
+            and self.current_epoch == self.hparams.unfreezeEpoch
+        ):
+            print(f"\n[epoch {self.current_epoch}] Unfreezing full backbone.")
+            for param in self.backbone.parameters():
+                param.requires_grad = True
+
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+        opt = torch.optim.AdamW(
+            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weightDecay
+        )
         sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.hparams.maxEpochs)
         return [opt], [sch]
 
@@ -217,6 +239,13 @@ def main():
                    help="Train on coarse type_categories labels instead of raw vehicle_types strings")
     p.add_argument("--noPosWeight", action="store_true",
                    help="Disable automatic pos_weight class balancing in BCEWithLogitsLoss")
+    p.add_argument("--weightDecay",     type=float, default=0.01,
+                   help="AdamW weight_decay (default: 0.01). Increase to 0.05–0.1 for regularization.")
+    p.add_argument("--freezeBackbone",  action="store_true",
+                   help="Freeze conv1..layer3; train only layer4 + classifier. "
+                        "Strongest anti-overfitting lever for small datasets.")
+    p.add_argument("--unfreezeEpoch",   type=int, default=None,
+                   help="Epoch at which to unfreeze the full backbone for end-to-end fine-tuning.")
     p.add_argument("--precision",  type=str,  default="bf16-mixed",
                    choices=["32", "16-mixed", "bf16-mixed"],
                    help="AMP precision mode. bf16-mixed is optimal for Blackwell (DGX Spark GB10). "
@@ -288,6 +317,9 @@ def main():
         lr=args.lr,
         maxEpochs=args.maxEpochs,
         posWeight=posWeight,
+        weightDecay=args.weightDecay,
+        freezeBackbone=args.freezeBackbone,
+        unfreezeEpoch=args.unfreezeEpoch,
     )
 
     if args.compile:
