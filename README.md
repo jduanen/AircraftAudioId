@@ -56,6 +56,11 @@ python scripts/record.py \
     * minAltitudeFt <alt_ft>: minimum aircraft altitude (default: ?)
     * sampleRate <Hz>: audio sample rate (default: ?Hz)
     * listenPort <portNum>: TCP port to receive Pi audio (default: ????)
+    * postTriggerSecs <float>: seconds to keep collecting departure states after the save trigger fires (default: 10)
+    * faaDatabaseDir <path>: path to unzipped FAA ReleasableAircraft directory — required for class-cap filtering
+    * datasetCsv <path>: path to existing `dataset.csv`; loads current per-class clip counts at startup
+    * maxSamplesPerClass <int>: skip recording aircraft whose coarse category already has this many clips in `dataset.csv`; requires `--faaDatabaseDir`; aircraft with unknown/foreign registrations are always recorded
+  - **class-cap filtering**: when `--maxSamplesPerClass` is set, the recorder looks up each new aircraft's FAA category and skips it if that category is already at the cap; prints a `[cap]` line for each skipped aircraft at startup showing which classes are capped; counts are loaded from `--datasetCsv` at startup and do not update mid-session — restart with a fresh CSV after rebuilding the dataset to refresh counts
 
 * **`scripts/buildDataset.py`**: reads recordings (meta)data and generates training dataset suitable for input to `toolchain.py`
   - e.g.,
