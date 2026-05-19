@@ -39,6 +39,16 @@ def main():
     p.add_argument("--postTriggerSecs", type=float, default=10.0,
                    help="Seconds to keep collecting departure states after the save trigger fires "
                         "(default: 10). Balances approach vs departure clips in the dataset.")
+    p.add_argument("--faaDatabaseDir", type=Path, default=None,
+                   help="Path to unzipped FAA ReleasableAircraft directory. "
+                        "Required for --maxSamplesPerClass to work.")
+    p.add_argument("--datasetCsv", type=Path, default=None,
+                   help="Path to existing dataset.csv. Used to load current per-class clip counts "
+                        "when --maxSamplesPerClass is set.")
+    p.add_argument("--maxSamplesPerClass", type=int, default=None,
+                   help="Skip recording aircraft whose coarse category already has this many clips "
+                        "in dataset.csv. Requires --faaDatabaseDir. Unknown/foreign aircraft are "
+                        "always recorded regardless of this cap.")
     args = p.parse_args()
 
     system = AircraftRecordingSystem(
@@ -54,6 +64,9 @@ def main():
         nullSampleIntervalSecs=args.nullSampleInterval,
         nullSampleDurationSecs=args.nullSampleDuration,
         postTriggerSecs=args.postTriggerSecs,
+        faaDatabaseDir=args.faaDatabaseDir,
+        datasetCsv=args.datasetCsv,
+        maxSamplesPerClass=args.maxSamplesPerClass,
     )
     system.start()
 

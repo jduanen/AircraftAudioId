@@ -18,6 +18,18 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 
+
+def _loadClassCounts(csvPath: Path) -> dict[str, int]:
+    """Count clips per type_categories label in an existing dataset CSV."""
+    import pandas as pd
+    df = pd.read_csv(csvPath)
+    col = "type_categories" if "type_categories" in df.columns else "vehicle_types"
+    counts: dict[str, int] = {}
+    for raw in df[col]:
+        for cat in json.loads(raw):
+            counts[cat] = counts.get(cat, 0) + 1
+    return counts
+
 from .adsb import AircraftState
 from .adsb.readsb import ReadsbClient
 from .audioStream.remoteStream import RemoteAudioStream
@@ -89,6 +101,9 @@ class AircraftRecordingSystem:
         nullSampleIntervalSecs: Optional[float] = None,
         nullSampleDurationSecs: float = 10.0,
         postTriggerSecs: float = DEFAULT_POST_TRIGGER_SECS,
+        faaDatabaseDir: Optional[Path] = None,
+        datasetCsv: Optional[Path] = None,
+        maxSamplesPerClass: Optional[int] = None,
     ):
         self.observerLat = observerLat
         self.observerLon = observerLon
@@ -131,6 +146,23 @@ class AircraftRecordingSystem:
 
         self._running = False
         self._lastNullSampleTime: float = 0.0
+
+        # Class-cap filtering: skip aircraft whose category already has enough clips.
+        self._faaDb = None
+        self._classCounts: dict[str, int] = {}
+        self._maxSamplesPerClass: Optional[int] = maxSamplesPerClass
+        self._skippedIcao: set[str] = set()
+
+        if faaDatabaseDir is not None and maxSamplesPerClass is not None:
+            from ..dataset.faaDatabase import FaaDatabase
+            self._faaDb = FaaDatabase(faaDatabaseDir)
+            if datasetCsv is not None and Path(datasetCsv).exists():
+                self._classCounts = _loadClassCounts(Path(datasetCsv))
+            print(f"Class cap: {maxSamplesPerClass} clips/class")
+            if self._classCounts:
+                for cat, n in sorted(self._classCounts.items(), key=lambda x: -x[1]):
+                    status = " [CAPPED]" if n >= maxSamplesPerClass else ""
+                    print(f"  {cat}: {n}{status}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -233,10 +265,21 @@ class AircraftRecordingSystem:
         icao24 = state.icao24
         now = time.time()
 
-        if icao24 in self._savedIcao:
+        if icao24 in self._savedIcao or icao24 in self._skippedIcao:
             return
 
         if icao24 not in self._trackedAircraft:
+            if self._faaDb is not None and self._maxSamplesPerClass is not None:
+                category = self._faaDb.categoryForIcao24(icao24)
+                count = self._classCounts.get(category, 0)
+                if category != "unknown" and count >= self._maxSamplesPerClass:
+                    self._skippedIcao.add(icao24)
+                    print(
+                        f"  [cap] {state.callsign or icao24:10s}  "
+                        f"{category} ({count}/{self._maxSamplesPerClass}) — skipping"
+                    )
+                    return
+
             self._trackedAircraft[icao24] = []
             self._firstSeenTime[icao24] = now
             print(
