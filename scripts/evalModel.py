@@ -67,11 +67,17 @@ def _loadLabelEncoder(args) -> dict[str, int]:
 
 
 def _loadModel(checkpointPath: str, nClasses: int, device: torch.device) -> VehicleSoundClassifier:
+    ckpt = torch.load(checkpointPath, map_location="cpu", weights_only=False)
+    ckptNClasses = ckpt.get("hyper_parameters", {}).get("nClasses", nClasses)
+    if ckptNClasses != nClasses:
+        print(
+            f"  Warning: checkpoint has {ckptNClasses} output classes "
+            f"but label encoder has {nClasses}."
+        )
     model = VehicleSoundClassifier.load_from_checkpoint(
         checkpointPath,
-        nClasses=nClasses,
+        nClasses=ckptNClasses,
         map_location=device,
-        strict=False,
     )
     model.eval()
     model.to(device)
@@ -241,6 +247,14 @@ def main():
     print(f"Classes ({nClasses}): {', '.join(sorted(labelEncoder))}")
 
     model = _loadModel(args.checkpoint, nClasses, device)
+
+    if model.hparams.nClasses != nClasses:
+        sys.exit(
+            f"  Checkpoint outputs {model.hparams.nClasses} classes but label encoder has "
+            f"{nClasses} — cannot evaluate.\n"
+            f"  Use the labelEncoder_<timestamp>.json saved alongside this checkpoint, or\n"
+            f"  rebuild: --trainCsv dataset/train.csv --valCsv dataset/val.csv (without --labelEncoder)."
+        )
 
     if args.wav:
         _inferWav(args.wav, model, labelEncoder, args.threshold, device)

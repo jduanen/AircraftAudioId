@@ -65,7 +65,9 @@ def computePosWeight(df: pd.DataFrame, labelEncoder: dict[str, int], labelCol: s
     """
     Compute per-class positive weight for BCEWithLogitsLoss to handle class imbalance.
     pos_weight[i] = (number of negative samples) / (number of positive samples) for class i.
-    Clipped to [0.1, 100] to prevent extreme values from rare/common classes.
+    Clipped to [0.1, 10] to prevent extreme values from rare/common classes.
+    Classes with fewer than ~10% of the majority class should be collected more aggressively
+    rather than compensated for with extreme pos_weight values.
     """
     nSamples = len(df)
     counts = torch.zeros(len(labelEncoder))
@@ -74,7 +76,7 @@ def computePosWeight(df: pd.DataFrame, labelEncoder: dict[str, int], labelCol: s
             if t in labelEncoder:
                 counts[labelEncoder[t]] += 1
     negCounts = nSamples - counts
-    posWeight = torch.clamp(negCounts / counts.clamp(min=1), min=0.1, max=100.0)
+    posWeight = torch.clamp(negCounts / counts.clamp(min=1), min=0.1, max=10.0)
     return posWeight
 
 
@@ -265,10 +267,16 @@ def main():
     labelEncoder = buildLabelEncoder(combinedDf, useCategories=args.useCategories)
 
     # Persist the encoder so eval / inference scripts don't need the train CSV.
+    # Also save a timestamped copy so old checkpoints can be matched to their encoder
+    # if a later training run overwrites labelEncoder.json with a different class set.
+    import shutil
+    from datetime import datetime
     Path(args.outputDir).mkdir(parents=True, exist_ok=True)
     encoderPath = Path(args.outputDir) / "labelEncoder.json"
     with open(encoderPath, "w") as _f:
         json.dump(labelEncoder, _f, indent=2)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    shutil.copy(encoderPath, Path(args.outputDir) / f"labelEncoder_{ts}.json")
     print(f"Label encoder saved: {encoderPath}")
 
     labelCol = (
