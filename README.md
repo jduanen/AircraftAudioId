@@ -204,6 +204,11 @@ bash scripts/evalDGX.sh \
   - `--weightDecay`: AdamW L2 penalty (default: 0.01). Increase to 0.05–0.1 for additional regularization.
   - `--noPosWeight`: disable automatic pos_weight balancing (not recommended unless the dataset is already balanced).
 
+  **Class imbalance and val_loss:**
+  pos_weight compensates for class imbalance in BCEWithLogitsLoss, but extreme ratios cause val_loss to blow up — a single wrong prediction on a 100× weighted class dominates the loss. Two mitigations are applied:
+  - **pos_weight cap lowered to 10** (was 100). Classes with fewer clips than ~10% of the majority class should be addressed by collecting more data (via `record.py --maxSamplesPerClass`), not by extreme loss weighting. `computePosWeight` in `toolchain.py` enforces this cap.
+  - **Balance the dataset before training** using `buildDataset.py --balanceClasses --maxPerClass N`. Capping the dominant class (e.g., `piston_single`) at a reasonable multiple of the rarest class reduces pos_weight values organically and makes the model see a more realistic distribution per batch. A class with fewer than ~200 clips is effectively unlearnable and should be excluded or merged until more data is collected.
+
 ## Workflow Steps
 
 1) Set up ADS-B capture device
