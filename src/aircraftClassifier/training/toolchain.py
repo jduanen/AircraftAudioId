@@ -239,6 +239,9 @@ def main():
                    help="Folder of background noise WAVs for AddBackgroundNoise augmentation")
     p.add_argument("--useCategories", action="store_true",
                    help="Train on coarse type_categories labels instead of raw vehicle_types strings")
+    p.add_argument("--minClipsPerClass", type=int, default=None,
+                   help="Drop classes with fewer than N clips in the combined train+val set. "
+                        "Prevents rare classes with no val samples from poisoning val_f1.")
     p.add_argument("--noPosWeight", action="store_true",
                    help="Disable automatic pos_weight class balancing in BCEWithLogitsLoss")
     p.add_argument("--weightDecay",     type=float, default=0.01,
@@ -265,6 +268,22 @@ def main():
     combinedDf = pd.concat([trainDf, valDf], ignore_index=True)
 
     labelEncoder = buildLabelEncoder(combinedDf, useCategories=args.useCategories)
+
+    if args.minClipsPerClass:
+        labelCol = (
+            "type_categories"
+            if args.useCategories and "type_categories" in combinedDf.columns
+            else "vehicle_types"
+        )
+        counts: dict[str, int] = {}
+        for labels in combinedDf[labelCol].apply(json.loads):
+            for t in labels:
+                counts[t] = counts.get(t, 0) + 1
+        kept = sorted(cls for cls in labelEncoder if counts.get(cls, 0) >= args.minClipsPerClass)
+        dropped = sorted(set(labelEncoder) - set(kept))
+        if dropped:
+            print(f"Dropping {len(dropped)} class(es) with < {args.minClipsPerClass} clips: {', '.join(dropped)}")
+        labelEncoder = {cls: i for i, cls in enumerate(kept)}
 
     # Persist the encoder so eval / inference scripts don't need the train CSV.
     # Also save a timestamped copy so old checkpoints can be matched to their encoder
