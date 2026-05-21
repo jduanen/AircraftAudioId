@@ -275,14 +275,14 @@ def main():
             if args.useCategories and "type_categories" in combinedDf.columns
             else "vehicle_types"
         )
-        counts: dict[str, int] = {}
-        for labels in combinedDf[labelCol].apply(json.loads):
+        valCounts: dict[str, int] = {}
+        for labels in valDf[labelCol].apply(json.loads):
             for t in labels:
-                counts[t] = counts.get(t, 0) + 1
-        kept = sorted(cls for cls in labelEncoder if counts.get(cls, 0) >= args.minClipsPerClass)
+                valCounts[t] = valCounts.get(t, 0) + 1
+        kept = sorted(cls for cls in labelEncoder if valCounts.get(cls, 0) >= args.minClipsPerClass)
         dropped = sorted(set(labelEncoder) - set(kept))
         if dropped:
-            print(f"Dropping {len(dropped)} class(es) with < {args.minClipsPerClass} clips: {', '.join(dropped)}")
+            print(f"Dropping {len(dropped)} class(es) with < {args.minClipsPerClass} val clips: {', '.join(dropped)}")
         labelEncoder = {cls: i for i, cls in enumerate(kept)}
 
     # Persist the encoder so eval / inference scripts don't need the train CSV.
