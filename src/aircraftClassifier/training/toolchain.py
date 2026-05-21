@@ -306,13 +306,18 @@ def main():
 
     # Print class distribution so imbalance is visible before training starts.
     print(f"\nClasses ({len(labelEncoder)}):")
-    classCounts = {cls: 0 for cls in labelEncoder}
+    trainCounts = {cls: 0 for cls in labelEncoder}
     for labels in trainDf[labelCol].apply(json.loads):
         for t in labels:
-            if t in classCounts:
-                classCounts[t] += 1
+            if t in trainCounts:
+                trainCounts[t] += 1
+    valCountsDisplay = {cls: 0 for cls in labelEncoder}
+    for labels in valDf[labelCol].apply(json.loads):
+        for t in labels:
+            if t in valCountsDisplay:
+                valCountsDisplay[t] += 1
     for cls, idx in labelEncoder.items():
-        print(f"  [{idx}] {cls}: {classCounts[cls]} train clips")
+        print(f"  [{idx}] {cls}: {trainCounts[cls]} train  {valCountsDisplay[cls]} val")
 
     posWeight = None
     if not args.noPosWeight:
