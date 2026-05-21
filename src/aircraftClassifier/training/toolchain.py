@@ -363,6 +363,7 @@ def main():
         devices=1,
         precision=args.precision,
         default_root_dir=args.outputDir,
+        num_sanity_val_steps=0,
         callbacks=[
             pl.callbacks.ModelCheckpoint(
                 dirpath=args.outputDir,
