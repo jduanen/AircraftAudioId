@@ -203,7 +203,7 @@ bash scripts/evalDGX.sh \
   - `--freezeBackbone`: freeze conv1 through layer3; only layer4 + classifier are trained. Strongest single lever for small datasets — prevents the backbone from memorizing training examples. Reduces trainable parameters from ~11M to ~2M.
   - `--unfreezeEpoch N`: at epoch N, unfreeze the full backbone for end-to-end fine-tuning. The cosine LR schedule has decayed by then, so fine-tuning is gentle. Typical value: 15–25 (after early epochs establish a good classifier head).
   - `--weightDecay`: AdamW L2 penalty (default: 0.01). Increase to 0.05–0.1 for additional regularization.
-  - `--minClipsPerClass N`: drop classes with fewer than N clips in the combined train+val set before building the label encoder. Classes below the threshold are excluded from training entirely — they are not learnable and poison val_f1 by contributing zero-precision labels to macro averaging. Prints a list of dropped classes at startup. Recommended: 100 (ensures ~20 val clips at an 80/20 split).
+  - `--minClipsPerClass N`: drop classes with fewer than N clips in the **val set** before building the label encoder. Classes below the threshold are excluded from training entirely — they are not learnable and poison val_f1 by contributing undefined recall to macro averaging. Counts against val (not combined) because a class with 0 val samples causes the warning even if it has many train clips. Prints a list of dropped classes at startup. Recommended: 10–20 (enough val samples for a stable F1 estimate).
   - `--noPosWeight`: disable automatic pos_weight balancing (not recommended unless the dataset is already balanced).
 
   **Class imbalance and val_loss:**
