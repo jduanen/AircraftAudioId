@@ -2,7 +2,7 @@
 
 **WIP**
 
-See [docs/workflow.html](https://github.com/jduanen/AircraftAudioId/main/docs/workflow.html) for the full interactive workflow diagram.
+See [docs/workflow.html](https://github.com/jduanen/AircraftAudioId/blob/main/docs/workflow.html) for the full interactive workflow diagram.
 
 ```mermaid
 flowchart LR
