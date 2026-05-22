@@ -2,6 +2,9 @@
 
 **WIP**
 
+Overview of the system's workflow [Workflow](./docs/workflow.html)
+
+
 ## Hardware
 
 ### ADS-B Metadata Capture (Rpi4B)
