@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AircraftAudioId — System Workflow</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d1117;
+      --surface: #161b22;
+      --border:  #30363d;
+      --text:    #c9d1d9;
+      --muted:   #8b949e;
+      --heading: #f0f6fc;
+
+      --c1: #f97583; --b1: rgba(249,117,131,0.13); --o1: rgba(249,117,131,0.35);
+      --c2: #ffab70; --b2: rgba(255,171,112,0.13); --o2: rgba(255,171,112,0.35);
+      --c3: #79c0ff; --b3: rgba(121,192,255,0.13); --o3: rgba(121,192,255,0.35);
+      --c4: #56d364; --b4: rgba(86,211,100,0.13);  --o4: rgba(86,211,100,0.35);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 40px 48px;
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    header { margin-bottom: 40px; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--heading); margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 13px; }
+
+    /* ── Section ── */
+    section { margin-bottom: 48px; }
+    h2 {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .1em; color: var(--muted);
+      padding-bottom: 8px; border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    /* ── Pills ── */
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 9px 2px 5px; border-radius: 12px;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .pill::before { content:''; width:7px; height:7px; border-radius:50%; background: var(--pc); }
+    .p1 { --pc:var(--c1); background:var(--b1); border:1px solid var(--o1); color:var(--c1); }
+    .p2 { --pc:var(--c2); background:var(--b2); border:1px solid var(--o2); color:var(--c2); }
+    .p3 { --pc:var(--c3); background:var(--b3); border:1px solid var(--o3); color:var(--c3); }
+    .p4 { --pc:var(--c4); background:var(--b4); border:1px solid var(--o4); color:var(--c4); }
+
+    /* ── Architecture diagram ── */
+    .arch-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .arch-wrap svg { display:block; width:100%; min-width:720px; }
+
+    /* ── Legend row ── */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 10px 24px;
+      margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .legend-item { display:flex; align-items:center; gap:8px; font-size:12px; }
+    .legend-item span { color: var(--muted); }
+
+    /* ── Workflow steps ── */
+    .steps { display:flex; flex-direction:column; gap:0; }
+    .step {
+      display: grid;
+      grid-template-columns: 34px 130px 1fr;
+      gap: 0 14px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+      align-items: start;
+    }
+    .step:last-child { border-bottom: none; }
+
+    .step-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 2px;
+    }
+    .s1 .step-num { background:var(--b1); border:1px solid var(--o1); color:var(--c1); }
+    .s2 .step-num { background:var(--b2); border:1px solid var(--o2); color:var(--c2); }
+    .s3 .step-num { background:var(--b3); border:1px solid var(--o3); color:var(--c3); }
+    .s4 .step-num { background:var(--b4); border:1px solid var(--o4); color:var(--c4); }
+
+    .step-machine { padding-top: 2px; }
+
+    .step-title { font-size:13px; font-weight:600; color:var(--heading); margin-bottom:3px; }
+    .step-desc  { font-size:12px; color:var(--muted); }
+
+    .step-cmd {
+      font-family: 'SF Mono','Fira Code','Consolas',monospace;
+      font-size: 11px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text);
+      margin-top: 8px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    /* ── Wire table ── */
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th {
+      text-align:left; padding:8px 12px;
+      color:var(--muted); font-weight:600;
+      border-bottom: 2px solid var(--border);
+    }
+    td { padding:9px 12px; border-bottom:1px solid #21262d; vertical-align:middle; }
+    tr:last-child td { border-bottom:none; }
+    .mono { font-family:'SF Mono','Fira Code',monospace; color:var(--muted); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>AircraftAudioId — System Workflow</h1>
+  <p class="subtitle">End-to-end pipeline · ADS-B capture · audio recording · dataset building · model training · evaluation</p>
+</header>
+
+<!-- ══════════════════════════════════════════════════════ Architecture -->
+<section>
+  <h2>Architecture</h2>
+  <div class="arch-wrap">
+    <svg viewBox="0 0 860 295" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a1" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0,7 2.5,0 5" fill="#f97583"/>
+        </marker>
+        <marker id="a2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0,7 2.5,0 5" fill="#ffab70"/>
+        </marker>
+        <marker id="a3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0,7 2.5,0 5" fill="#79c0ff"/>
+        </marker>
+      </defs>
+
+      <!-- RPi 4B -->
+      <rect x="8" y="16" width="188" height="104" rx="8"
+            fill="rgba(249,117,131,.1)" stroke="rgba(249,117,131,.4)" stroke-width="1.5"/>
+      <circle cx="24" cy="35" r="5" fill="#f97583"/>
+      <text x="34"  y="39"  fill="#f97583" font-size="12" font-weight="bold" font-family="system-ui,sans-serif">RPi 4B</text>
+      <text x="14"  y="54"  fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Raspberry Pi 4B · dual SDR dongle</text>
+      <text x="14"  y="71"  fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">readsb</text>
+      <text x="14"  y="86"  fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Receives 1090 MHz ADS-B</text>
+      <text x="14"  y="101" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Serves aircraft.json on :80</text>
+      <text x="14"  y="113" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">NTP sync required</text>
+
+      <!-- RPi Zero 2W -->
+      <rect x="8" y="175" width="188" height="104" rx="8"
+            fill="rgba(255,171,112,.1)" stroke="rgba(255,171,112,.4)" stroke-width="1.5"/>
+      <circle cx="24" cy="194" r="5" fill="#ffab70"/>
+      <text x="34"  y="198" fill="#ffab70" font-size="12" font-weight="bold" font-family="system-ui,sans-serif">RPi Zero 2W</text>
+      <text x="14"  y="213" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Raspberry Pi Zero 2W · USB mic</text>
+      <text x="14"  y="230" fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/capture.py</text>
+      <text x="14"  y="245" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">44100 Hz mono int16</text>
+      <text x="14"  y="260" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Framed PCM stream → TCP :9876</text>
+      <text x="14"  y="272" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">NTP sync required</text>
+
+      <!-- Ubuntu Server -->
+      <rect x="282" y="16" width="268" height="263" rx="8"
+            fill="rgba(121,192,255,.1)" stroke="rgba(121,192,255,.4)" stroke-width="1.5"/>
+      <circle cx="298" cy="35" r="5" fill="#79c0ff"/>
+      <text x="308" y="39"  fill="#79c0ff" font-size="12" font-weight="bold" font-family="system-ui,sans-serif">Ubuntu Server</text>
+      <text x="288" y="54"  fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">i7-7820X · 128 GB DRAM · GTX 2080</text>
+
+      <line x1="288" y1="62" x2="542" y2="62" stroke="#30363d" stroke-width=".5"/>
+      <text x="288" y="76"  fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/record.py</text>
+      <text x="288" y="90"  fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Polls ADS-B · maintains 60s audio ring buffer</text>
+      <text x="288" y="103" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Saves WAV + metadata JSON on flyover</text>
+
+      <line x1="288" y1="113" x2="542" y2="113" stroke="#30363d" stroke-width=".5"/>
+      <text x="288" y="127" fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/buildDataset.py</text>
+      <text x="288" y="141" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Aligns ADS-B timestamps to audio samples</text>
+      <text x="288" y="154" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Cuts 5s clips · assigns FAA category labels</text>
+      <text x="288" y="167" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Writes train.csv / val.csv (split by session)</text>
+
+      <line x1="288" y1="177" x2="542" y2="177" stroke="#30363d" stroke-width=".5"/>
+      <text x="288" y="191" fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/precomputeSpecs.py</text>
+      <text x="288" y="205" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Writes &lt;clip&gt;.spec.npy alongside each WAV</text>
+      <text x="288" y="218" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Eliminates per-epoch CPU spectrogram cost</text>
+
+      <line x1="288" y1="228" x2="542" y2="228" stroke="#30363d" stroke-width=".5"/>
+      <text x="288" y="242" fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/syncToDGX.sh</text>
+      <text x="288" y="256" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">rsync code + dataset/ to DGX Spark</text>
+      <text x="288" y="269" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Excludes recordings/ (stays local)</text>
+
+      <!-- DGX Spark -->
+      <rect x="648" y="16" width="204" height="263" rx="8"
+            fill="rgba(86,211,100,.1)" stroke="rgba(86,211,100,.4)" stroke-width="1.5"/>
+      <circle cx="664" cy="35" r="5" fill="#56d364"/>
+      <text x="674" y="39"  fill="#56d364" font-size="12" font-weight="bold" font-family="system-ui,sans-serif">DGX Spark</text>
+      <text x="654" y="54"  fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">GB10 · 128 GB unified DRAM · Blackwell</text>
+
+      <line x1="654" y1="62" x2="844" y2="62" stroke="#30363d" stroke-width=".5"/>
+      <text x="654" y="76"  fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/trainDGX.sh</text>
+      <text x="654" y="90"  fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Builds Docker (NGC PyTorch arm64)</text>
+      <text x="654" y="103" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Runs toolchain.py inside container</text>
+      <text x="654" y="116" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">ResNet-18 · mel spec · BCEWithLogitsLoss</text>
+      <text x="654" y="129" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Saves checkpoints/</text>
+
+      <line x1="654" y1="140" x2="844" y2="140" stroke="#30363d" stroke-width=".5"/>
+      <text x="654" y="154" fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/evalDGX.sh</text>
+      <text x="654" y="168" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Per-class AP / F1 / precision / recall</text>
+      <text x="654" y="181" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Macro mAP · optional threshold tuning</text>
+
+      <line x1="654" y1="192" x2="844" y2="192" stroke="#30363d" stroke-width=".5"/>
+      <text x="654" y="206" fill="#c9d1d9" font-size="11" font-family="'Courier New',monospace">scripts/evalModel.py</text>
+      <text x="654" y="220" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Single-WAV inference</text>
+      <text x="654" y="233" fill="#8b949e" font-size="10" font-family="system-ui,sans-serif">Sorted probability table per class</text>
+
+      <!-- Arrow: RPi 4B → Ubuntu -->
+      <line x1="197" y1="68" x2="280" y2="108"
+            stroke="#f97583" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a1)"/>
+      <text x="200" y="80" fill="#f97583" font-size="10" font-family="system-ui,sans-serif">HTTP · JSON</text>
+      <text x="200" y="91" fill="#f97583" font-size="9"  font-family="system-ui,sans-serif" opacity=".7">poll every 1 s</text>
+
+      <!-- Arrow: RPi Zero 2W → Ubuntu -->
+      <line x1="197" y1="227" x2="280" y2="196"
+            stroke="#ffab70" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+      <text x="200" y="222" fill="#ffab70" font-size="10" font-family="system-ui,sans-serif">TCP · PCM</text>
+      <text x="200" y="233" fill="#ffab70" font-size="9"  font-family="system-ui,sans-serif" opacity=".7">continuous stream</text>
+
+      <!-- Arrow: Ubuntu → DGX -->
+      <line x1="552" y1="148" x2="646" y2="148"
+            stroke="#79c0ff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+      <text x="566" y="141" fill="#79c0ff" font-size="10" font-family="system-ui,sans-serif">rsync / SSH</text>
+    </svg>
+
+    <div class="legend">
+      <div class="legend-item"><span class="pill p1">RPi 4B</span>         <span>ADS-B receiver</span></div>
+      <div class="legend-item"><span class="pill p2">RPi Zero 2W</span>    <span>Audio capture</span></div>
+      <div class="legend-item"><span class="pill p3">Ubuntu Server</span>  <span>Recording · dataset building · sync</span></div>
+      <div class="legend-item"><span class="pill p4">DGX Spark</span>      <span>Training · evaluation · inference</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════ Workflow Steps -->
+<section>
+  <h2>Workflow Steps</h2>
+  <div class="steps">
+
+    <div class="step s1">
+      <div class="step-num">1</div>
+      <div class="step-machine"><span class="pill p1">RPi 4B</span></div>
+      <div>
+        <div class="step-title">Start ADS-B receiver</div>
+        <div class="step-desc">Run readsb with the SDR dongle to receive 1090 MHz Mode S transponder signals. Serves live aircraft positions as JSON. Clock must be NTP-synced — ADS-B timestamps are the ground truth for audio alignment.</div>
+      </div>
+    </div>
+
+    <div class="step s2">
+      <div class="step-num">2</div>
+      <div class="step-machine"><span class="pill p2">RPi Zero 2W</span></div>
+      <div>
+        <div class="step-title">Start audio capture</div>
+        <div class="step-desc">Captures USB mic at 44100 Hz mono int16. Each chunk is framed with an 8-byte float64 Unix timestamp and a 4-byte length prefix, then sent over TCP. Clock must be NTP-synced; warns if offset exceeds 100 ms.</div>
+        <div class="step-cmd">python audioCapture/scripts/capture.py --host &lt;server-ip&gt; --port 9876</div>
+      </div>
+    </div>
+
+    <div class="step s3">
+      <div class="step-num">3</div>
+      <div class="step-machine"><span class="pill p3">Ubuntu</span></div>
+      <div>
+        <div class="step-title">Record flyovers</div>
+        <div class="step-desc">Polls ADS-B every second and tracks aircraft within the radius. Maintains a 60-second PCM ring buffer. Saves a WAV + metadata JSON when a tracked aircraft departs (last 3 distances increasing) or after the 30s cap. Skips saves if the audio stream is unhealthy. Optional: record background clips on a timer with --nullSampleInterval.</div>
+        <div class="step-cmd">python scripts/record.py \
+    --lat &lt;lat&gt; --lon &lt;lon&gt; --radiusKm 8 \
+    --outputDir ./recordings \
+    --readsbUrl http://adsbrx.lan/data/aircraft.json \
+    --faaDatabaseDir ./data/ReleasableAircraft \
+    --nullSampleInterval 300 --nullSampleDuration 10</div>
+      </div>
+    </div>
+
+    <div class="step s3">
+      <div class="step-num">4</div>
+      <div class="step-machine"><span class="pill p3">Ubuntu</span></div>
+      <div>
+        <div class="step-title">Build training dataset</div>
+        <div class="step-desc">Reads recordings and metadata, corrects clock skew, aligns ADS-B state timestamps to audio sample positions, cuts 5-second clips, and assigns FAA category labels via the ReleasableAircraft database. Splits by recording session to prevent data leakage. Produces train.csv, val.csv, and clips/*.wav.</div>
+        <div class="step-cmd">python scripts/buildDataset.py \
+    --recordingsDir ./recordings \
+    --outputDir ./dataset \
+    --faaDatabaseDir ./data/ReleasableAircraft \
+    --autoCorrectClock \
+    --maxDistanceKm 4.0 \
+    --dropUnknown \
+    --stratifyPhase \
+    --balanceClasses</div>
+      </div>
+    </div>
+
+    <div class="step s3">
+      <div class="step-num">5</div>
+      <div class="step-machine"><span class="pill p3">Ubuntu</span></div>
+      <div>
+        <div class="step-title">Pre-compute spectrograms</div>
+        <div class="step-desc">Converts each WAV clip to a 128-mel log-power spectrogram and saves it as &lt;clip&gt;.spec.npy alongside the WAV. The training DataLoader loads .npy directly, eliminating the per-epoch CPU bottleneck. Run once after building the dataset; re-run with --skipExisting after adding new clips.</div>
+        <div class="step-cmd">python scripts/precomputeSpecs.py \
+    --trainCsv dataset/train.csv \
+    --valCsv dataset/val.csv \
+    --skipExisting --workers 16</div>
+      </div>
+    </div>
+
+    <div class="step s3">
+      <div class="step-num">6</div>
+      <div class="step-machine"><span class="pill p3">Ubuntu</span></div>
+      <div>
+        <div class="step-title">Sync to DGX Spark</div>
+        <div class="step-desc">rsyncs source code and dataset/ (WAVs, CSVs, .spec.npy files) to the DGX over SSH. Excludes recordings/ — raw audio stays on the server only.</div>
+        <div class="step-cmd">bash scripts/syncToDGX.sh spark-8d0d.local</div>
+      </div>
+    </div>
+
+    <div class="step s4">
+      <div class="step-num">7</div>
+      <div class="step-machine"><span class="pill p4">DGX Spark</span></div>
+      <div>
+        <div class="step-title">Train model</div>
+        <div class="step-desc">Builds the training Docker image (NGC PyTorch arm64 base, bf16-mixed AMP). Runs toolchain.py: ResNet-18 backbone adapted for 1-channel mel spectrogram input, multi-label sigmoid head, BCEWithLogitsLoss with pos_weight balancing, SpecAugment, AdamW + cosine LR schedule. Saves top-3 checkpoints by val_f1; EarlyStopping at patience=10.</div>
+        <div class="step-cmd">bash scripts/trainDGX.sh \
+    --useCategories \
+    --freezeBackbone \
+    --weightDecay 0.05 \
+    --maxEpochs 60 \
+    --minClipsPerClass 100</div>
+      </div>
+    </div>
+
+    <div class="step s4">
+      <div class="step-num">8</div>
+      <div class="step-machine"><span class="pill p4">DGX Spark</span></div>
+      <div>
+        <div class="step-title">Evaluate checkpoint</div>
+        <div class="step-desc">Runs the saved checkpoint against val.csv. Prints per-class AP, F1, precision, recall, and support in a sorted table, plus macro mAP and F1. Use the labelEncoder_&lt;timestamp&gt;.json saved alongside each checkpoint to ensure the class mapping matches.</div>
+        <div class="step-cmd">bash scripts/evalDGX.sh \
+    --checkpoint checkpoints/best.ckpt \
+    --labelEncoder checkpoints/labelEncoder_&lt;timestamp&gt;.json \
+    --valCsv dataset/val.csv \
+    --useCategories --tuneThresholds</div>
+      </div>
+    </div>
+
+    <div class="step s4">
+      <div class="step-num">9</div>
+      <div class="step-machine"><span class="pill p4">DGX Spark</span></div>
+      <div>
+        <div class="step-title">Single-clip inference</div>
+        <div class="step-desc">Run the trained model on a single WAV file. Loads the clip, computes the mel spectrogram, and prints a sorted probability table of all classes with active predictions marked.</div>
+        <div class="step-cmd">python scripts/evalModel.py \
+    --checkpoint checkpoints/best.ckpt \
+    --labelEncoder checkpoints/labelEncoder_&lt;timestamp&gt;.json \
+    --wav /path/to/clip.wav</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════ Wire Protocol -->
+<section>
+  <h2>Wire Protocol &amp; Data Formats</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>From</th>
+        <th>To</th>
+        <th>Transport</th>
+        <th>Format / Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="pill p1">RPi 4B</span></td>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td class="mono">HTTP GET :80</td>
+        <td style="color:var(--muted);">JSON aircraft list — polled every 1 s by ReadsbClient</td>
+      </tr>
+      <tr>
+        <td><span class="pill p2">RPi Zero 2W</span></td>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td class="mono">TCP :9876</td>
+        <td style="color:var(--muted);"><span class="mono">[8B float64 Unix timestamp][4B uint32 byte_len][N bytes PCM S16LE]</span> — continuous framed stream; server maintains 60 s ring buffer</td>
+      </tr>
+      <tr>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td class="mono">local disk</td>
+        <td style="color:var(--muted);"><span class="mono">recordings/audio/&lt;id&gt;.wav</span> + <span class="mono">recordings/metadata/&lt;id&gt;.json</span> per flyover event</td>
+      </tr>
+      <tr>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td class="mono">local disk</td>
+        <td style="color:var(--muted);"><span class="mono">dataset/clips/*.wav</span> · <span class="mono">dataset/train.csv</span> / <span class="mono">val.csv</span> · <span class="mono">*.spec.npy</span></td>
+      </tr>
+      <tr>
+        <td><span class="pill p3">Ubuntu</span></td>
+        <td><span class="pill p4">DGX Spark</span></td>
+        <td class="mono">rsync / SSH</td>
+        <td style="color:var(--muted);">Source code + <span class="mono">dataset/</span> (includes .spec.npy). Excludes <span class="mono">recordings/</span>.</td>
+      </tr>
+      <tr>
+        <td><span class="pill p4">DGX Spark</span></td>
+        <td><span class="pill p4">DGX Spark</span></td>
+        <td class="mono">local disk</td>
+        <td style="color:var(--muted);"><span class="mono">checkpoints/*.ckpt</span> · <span class="mono">checkpoints/labelEncoder.json</span> · <span class="mono">checkpoints/labelEncoder_&lt;ts&gt;.json</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>
