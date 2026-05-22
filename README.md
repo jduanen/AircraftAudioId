@@ -2,8 +2,25 @@
 
 **WIP**
 
-Overview of the system's workflow [Workflow](./docs/workflow.html)
+See [docs/workflow.html](./docs/workflow.html) for the full interactive workflow diagram.
 
+```mermaid
+flowchart LR
+    subgraph SRC["Input Sources"]
+        R["RPi 4B\nreadsb\nADS-B 1090 MHz"]
+        A["RPi Zero 2W\ncapture.py\nUSB mic"]
+    end
+    subgraph SVR["Ubuntu Server"]
+        U1["record.py"] --> U2["buildDataset.py"] --> U3["precomputeSpecs.py"] --> U4["syncToDGX.sh"]
+    end
+    subgraph DGX["DGX Spark (Docker)"]
+        D1["trainDGX.sh\ntoolchain.py"] --> D2["evalDGX.sh\nevalModel.py"]
+    end
+
+    R -->|"HTTP JSON · 1 s poll"| U1
+    A -->|"TCP :9876 · PCM stream"| U1
+    U4 -->|"rsync / SSH"| D1
+```
 
 ## Hardware
 
