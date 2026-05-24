@@ -381,24 +381,27 @@ def inspectAudioQuality(csvPath: Path, maxClips: int = 200) -> None:
 
 def main():
     p = argparse.ArgumentParser(description="Inspect dataset quantity, quality, and distribution.")
-    p.add_argument("--recordingsDir", required=True, type=Path,
-                   help="Root recordings directory (contains audio/ and metadata/)")
+    p.add_argument("--recordingsDir", type=Path, default=None,
+                   help="Root recordings directory containing audio/ and metadata/ (don't analyze recordings if not given)")
     p.add_argument("--datasetCsv", type=Path, default=None,
-                   help="Path to dataset.csv (default: <recordingsDir>/../dataset/dataset.csv)")
+                   help="Path to dataset.csv (don't analyze the dataset if not given)")
     p.add_argument("--maxQualityClips", type=int, default=200,
                    help="Max clips to read for audio quality check (default: 200)")
     args = p.parse_args()
 
-    csvPath = args.datasetCsv or (args.recordingsDir.parent / "dataset" / "dataset.csv")
+    ####csvPath = args.datasetCsv or (args.recordingsDir.parent / "dataset" / "dataset.csv")
 
-    result = inspectRecordings(args.recordingsDir)
-    metaPaths = result.get("metaPaths", [])
-    if metaPaths:
-        inspectAlignment(metaPaths)
-    inspectCsv(csvPath)
-    inspectAudioQuality(csvPath, maxClips=args.maxQualityClips)
+    if args.recordingsDir:
+        result = inspectRecordings(args.recordingsDir)
+        metaPaths = result.get("metaPaths", [])
+        if metaPaths:
+            inspectAlignment(metaPaths)
+    if args.datasetCsv:
+        inspectCsv(args.datasetCsv)
+        inspectAudioQuality(args.datasetCsv, maxClips=args.maxQualityClips)
 
-    print(f"\n{'═'*60}\n")
+    if args.recordingsDir or args.datasetCsv:
+        print(f"\n{'═'*60}\n")
 
 
 if __name__ == "__main__":
