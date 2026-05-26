@@ -66,6 +66,11 @@ def inspectRecordings(recordingsDir: Path) -> dict:
         print("  [!] No metadata/ directory found.")
         return {}
 
+    try:
+        from aircraftAudio.dataset.typeCategories import typeToCategory as _typeToCategory
+    except ImportError:
+        _typeToCategory = None
+
     metaPaths = sorted(p for p in metaDir.glob("*.json") if not p.name.startswith("session_"))
     print(f"\n{'═'*60}")
     print("  RECORDINGS INVENTORY")
@@ -76,7 +81,7 @@ def inspectRecordings(recordingsDir: Path) -> dict:
     print(f"  Have matching WAV: {hasBothCount}")
     print(f"  Missing WAV:       {len(metaPaths) - hasBothCount}")
 
-    durations, distances, types, singleCount, multiCount = [], [], Counter(), 0, 0
+    durations, distances, types, categories, singleCount, multiCount = [], [], Counter(), Counter(), 0, 0
     hasStartTime, missingStartTime = 0, 0
     startTimes = []
     nullCount = 0
@@ -118,6 +123,9 @@ def inspectRecordings(recordingsDir: Path) -> dict:
         else:
             types["(unknown)"] += 1
 
+        if _typeToCategory and not meta.get("isNullSample"):
+            categories[_typeToCategory(atype)] += 1
+
     if startTimes:
         earliest = min(startTimes)
         latest   = max(startTimes)
@@ -137,7 +145,9 @@ def inspectRecordings(recordingsDir: Path) -> dict:
     print(f"  Null (background) samples:  {nullCount}")
     _histo(durations, bins=8, label="Recording duration (s)")
     _histo(distances, bins=10, label="ADS-B state distance (km)")
-    _countBar(types, "Aircraft type distribution")
+    if categories:
+        _countBar(categories, "Coarse category distribution (non-null recordings)")
+    _countBar(types, "Raw aircraft type distribution")
 
     return {"metaPaths": metaPaths}
 
