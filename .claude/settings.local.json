@@ -16,7 +16,9 @@
       "Read(//home/jdn/.claude/**)",
       "Read(//home/jdn/.claude/projects/**)",
       "Bash(nvidia-smi)",
-      "Bash(ip -4 addr show)"
+      "Bash(ip -4 addr show)",
+      "Bash(sqlite3 ~/.aircraftroute/routes.db \".schema routes\")",
+      "Bash(chmod +x *)"
     ]
   }
 }
