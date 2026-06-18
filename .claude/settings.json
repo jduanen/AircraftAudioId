@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "deny": [
-      "Bash(bash scripts/syncToDGX.sh*)",
-      "Bash(bash scripts/trainDGX.sh*)"
-    ]
-  }
-}
