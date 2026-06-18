@@ -60,6 +60,7 @@ rsync ${OPTS} -avz --progress \
     --exclude='sim/' \
     --exclude='tests/' \
     --exclude='tools/' \
+    --exclude='venv/' \
     --filter='protect checkpoints/' \
     "${PROJECT_ROOT}/" \
     "${REMOTE_PATH}"
