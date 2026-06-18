@@ -133,3 +133,6 @@ data/ReleasableAircraft/
 dataset
 recordings
 hold
+inspect
+checkpoints
+.claude
