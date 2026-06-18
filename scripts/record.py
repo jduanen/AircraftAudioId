@@ -49,6 +49,9 @@ def main():
                    help="Skip recording aircraft whose coarse category already has this many clips "
                         "in dataset.csv. Requires --faaDatabaseDir. Unknown/foreign aircraft are "
                         "always recorded regardless of this cap.")
+    p.add_argument("--dropUnknown", action="store_true",
+                   help="Skip recording aircraft whose type cannot be resolved to a known coarse "
+                        "category. Requires --faaDatabaseDir.")
     args = p.parse_args()
 
     system = AircraftRecordingSystem(
@@ -67,6 +70,7 @@ def main():
         faaDatabaseDir=args.faaDatabaseDir,
         datasetCsv=args.datasetCsv,
         maxSamplesPerClass=args.maxSamplesPerClass,
+        dropUnknown=args.dropUnknown,
     )
     system.start()
 
