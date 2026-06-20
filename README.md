@@ -154,6 +154,73 @@ python3 scripts/inspectDataset.py --recordingsDir <path>
     * a histogram of the distribution of coarse labels
     * an indication of clock skew between the devices
 
+* **`scripts/evalClipQuality.py`**: evaluates audio clip quality per class using fast CSV-based metrics and optional deep per-file analysis
+  - **Fast path** (no audio reads — uses pre-computed `clipRms` column in the CSV):
+    * per-class table: mean/median/P10 RMS dBFS, % of clips below quality threshold, average distance and altitude
+    * RMS histogram for the selected class
+    * flight-phase breakdown (approach / closest / departure) for the selected class
+  - **Deep path** (`--deepAnalysis` — reads each WAV file via soundfile + librosa):
+    * silence fraction: fraction of samples with `|x| < 0.005`
+    * clipping fraction: fraction of samples with `|x| > 0.99` (ADC saturation)
+    * frame energy std dev: std dev of per-0.1s-frame RMS; low = flat noise with no distinct event
+    * edge/center energy ratio: RMS of first+last 1 s ÷ RMS of middle 3 s; ratio > 1 = inverted energy envelope (misaligned or noise-only clip)
+    * spectral flatness: 0 = tonal/structured, 1 = broadband noise
+    * spectral centroid: frequency center of mass in Hz; very low (<300 Hz) = wind/rumble dominated
+    * low-frequency energy ratio: fraction of spectral energy below 200 Hz; high = wind noise dominant
+  - e.g.,
+```bash
+# Fast: all-class RMS summary (no audio reads)
+python scripts/evalClipQuality.py --datasetCsv dataset/dataset.csv
+
+# Fast: focus on one class with RMS histogram and phase breakdown
+python scripts/evalClipQuality.py --datasetCsv dataset/dataset.csv --category piston_twin
+
+# Deep: full analysis for weakest class, print 20 worst clips, export bad-clip list
+python scripts/evalClipQuality.py \
+    --datasetCsv dataset/dataset.csv \
+    --category piston_twin \
+    --deepAnalysis --worstN 20 \
+    --outputBadClips bad_piston_twin.txt \
+    --rmsThresholdDb -55
+```
+  - options:
+    * `--category <name>`: coarse category to focus on (e.g. `piston_twin`); omit for all-class table only
+    * `--deepAnalysis`: enable WAV-file analysis for silence, clipping, spectral, and temporal metrics
+    * `--maxClips <int>`: cap the number of clips analysed in deep mode (randomly sampled, seed=42)
+    * `--worstN <int>`: number of lowest-RMS clips to print in the worst-clips table (default: 20)
+    * `--outputBadClips <path>`: write one filepath per line for all clips below `--rmsThresholdDb`
+    * `--rmsThresholdDb <float>`: dBFS threshold for "low quality" (default: −55)
+  - **Choosing a dBFS threshold**: the script uses dBFS (decibels full-scale, relative to the ADC clipping point — not dBm). A clip is useful only when the aircraft signal is clearly above the ambient noise floor; aim for at least 10–15 dB of headroom above background. Typical reference points for a USB mic recording outdoors:
+    * −20 to −35 dBFS: loud, close aircraft — ideal
+    * −35 to −50 dBFS: moderate distance — usually usable
+    * −50 to −60 dBFS: distant/quiet — borderline; may be mostly noise
+    * below −60 dBFS: almost certainly inaudible over ambient noise
+  - To calibrate the threshold for your setup, run the fast path first (`--datasetCsv` only) and inspect the P10 column. Set `--rmsThresholdDb` just above the level where clips stop sounding like aircraft and start sounding like wind or silence. Listening to a handful of clips at −50, −55, and −60 dBFS from your recordings takes only a few minutes and gives a concrete answer.
+  - **Interpreting deep analysis metrics**: each metric flags a different failure mode; read them together rather than in isolation.
+
+    | Metric | Good | Warning | Bad |
+    |---|---|---|---|
+    | Silence % | < 10% | 10–30% | > 30% — large gaps, aircraft may have already passed |
+    | Clipping % | ≈ 0% | > 0.1% | > 1% — ADC saturation, spectral detail destroyed; reduce mic gain |
+    | Frame energy std | high | — | near 0 — temporally flat; ambient noise with no flyover event |
+    | Edge/center ratio (ECR) | < 1.0 | ≈ 1.0 | > 1.5 — inverted envelope; clip misaligned or captures only the tail/head of the flyover |
+    | Spectral flatness | < 0.2 | 0.3–0.6 | > 0.6 — broadband noise dominant; does not sound like an aircraft |
+    | Spectral centroid | 600–2000 Hz (piston), 300–1000 Hz (jet) | — | < 300 Hz = wind/rumble dominant; > 4000 Hz = interference or mic noise |
+    | Low-freq ratio | < 25% | 25–50% | > 50% — sub-200 Hz energy dominant; almost always wind noise |
+
+  - **Common failure patterns** (combinations that indicate a bad clip):
+
+    | Pattern | Likely cause |
+    |---|---|
+    | Low RMS + high flatness + low frame-energy std | Ambient noise — no aircraft event captured |
+    | High silence % + low frame-energy std | Aircraft too brief or already gone when clip was cut |
+    | Low RMS + high LF% + low centroid | Wind noise dominating the clip |
+    | Good RMS + high clipping % | Mic gain too high or aircraft too close |
+    | ECR > 1.5 + good RMS | Clip misaligned — aircraft was loudest at the edges of the window |
+    | Low RMS + low flatness + centroid 500–1500 Hz | Distant but real aircraft — may still be trainable |
+
+  - **Filtering recommendation**: discard clips with *at least two* flags simultaneously (e.g. RMS < −55 dBFS AND flatness > 0.5 AND LF% > 50%). Single-metric outliers are often just distant aircraft and may still contribute useful training signal.
+
 * **`scripts/icaoLookup.py`**: list unique ICAO24 hex codes seen across all recorded metadata, with optional sample counts, track counts, and FAA registration details
   - e.g.,
 ```bash
