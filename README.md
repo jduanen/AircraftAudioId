@@ -182,6 +182,18 @@ python scripts/evalClipQuality.py \
     --deepAnalysis --worstN 20 \
     --outputBadClips bad_piston_twin.txt \
     --rmsThresholdDb -55
+
+# Fast: keep 500 best piston_single clips by RMS (no audio reads)
+python scripts/evalClipQuality.py \
+    --datasetCsv dataset/dataset.csv \
+    --category piston_single \
+    --keepBestN 500 --outputBestClips best_piston_single.txt
+
+# Deep: keep 500 best clips by composite quality score (all 7 metrics)
+python scripts/evalClipQuality.py \
+    --datasetCsv dataset/dataset.csv \
+    --category piston_single \
+    --deepAnalysis --keepBestN 500 --outputBestClips best_piston_single.txt
 ```
   - options:
     * `--category <name>`: coarse category to focus on (e.g. `piston_twin`); omit for all-class table only
@@ -190,6 +202,19 @@ python scripts/evalClipQuality.py \
     * `--worstN <int>`: number of lowest-RMS clips to print in the worst-clips table (default: 20)
     * `--outputBadClips <path>`: write one filepath per line for all clips below `--rmsThresholdDb`
     * `--rmsThresholdDb <float>`: dBFS threshold for "low quality" (default: −55)
+    * `--keepBestN <int>`: select the N highest-quality clips for the selected class and write their paths to `--outputBestClips`. Requires `--category` and `--outputBestClips`. Without `--deepAnalysis`, ranks by RMS only; with `--deepAnalysis`, ranks by a weighted composite score across all seven metrics (see table below).
+    * `--outputBestClips <path>`: output file for `--keepBestN` results; one filepath per line
+  - **Composite quality score** (used by `--keepBestN --deepAnalysis`): each metric is normalised to [0, 1] (1 = best) and combined with the following weights:
+
+    | Weight | Metric | Direction |
+    |---|---|---|
+    | 0.35 | RMS dBFS | higher = louder aircraft |
+    | 0.15 | Silence fraction | lower = fewer silent gaps |
+    | 0.10 | Clipping fraction | lower = no ADC saturation |
+    | 0.10 | Spectral flatness | lower = more tonal / structured |
+    | 0.10 | Edge/center ratio | lower = energy centred on flyover apex |
+    | 0.10 | Low-freq energy ratio | lower = less wind/rumble |
+    | 0.10 | Spectral centroid | penalise < 300 Hz (wind) and > 4000 Hz (noise) |
   - **Choosing a dBFS threshold**: the script uses dBFS (decibels full-scale, relative to the ADC clipping point — not dBm). A clip is useful only when the aircraft signal is clearly above the ambient noise floor; aim for at least 10–15 dB of headroom above background. Typical reference points for a USB mic recording outdoors:
     * −20 to −35 dBFS: loud, close aircraft — ideal
     * −35 to −50 dBFS: moderate distance — usually usable
