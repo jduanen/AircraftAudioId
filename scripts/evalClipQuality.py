@@ -58,6 +58,35 @@ Usage
       --deepAnalysis --worstN 20 \\
       --outputBadClips bad_piston_twin.txt \\
       --rmsThresholdDb -55
+
+  # Keep the best 500 piston_single clips by RMS (fast, no audio reads):
+  python scripts/evalClipQuality.py \\
+      --datasetCsv dataset/dataset.csv \\
+      --category piston_single \\
+      --keepBestN 500 --outputBestClips best_piston_single.txt
+
+  # Keep the best 500 clips by composite quality score (deep mode):
+  python scripts/evalClipQuality.py \\
+      --datasetCsv dataset/dataset.csv \\
+      --category piston_single \\
+      --deepAnalysis --keepBestN 500 --outputBestClips best_piston_single.txt
+
+Composite quality score (deep mode only)
+─────────────────────────────────────────
+When --deepAnalysis is active, --keepBestN ranks clips by a weighted composite
+score rather than RMS alone.  Each metric is normalised to [0, 1] (1 = best):
+
+  Weight  Metric
+  ──────  ──────────────────────────────────────────────────────────────
+   0.35   rmsDb            higher RMS = louder aircraft = better signal
+   0.15   silenceFrac      lower = fewer silent gaps
+   0.10   clippingFrac     lower = no ADC saturation
+   0.10   spectralFlatness lower = more tonal / structured (not noise)
+   0.10   edgeCenterRatio  lower = energy centred on flyover apex
+   0.10   lowFreqRatio     lower = less wind/rumble content
+   0.10   spectralCentroid penalise < 300 Hz (wind) and > 4000 Hz (noise)
+
+Without --deepAnalysis, ranking falls back to RMS only.
 """
 
 import sys
@@ -381,6 +410,62 @@ def _writeBadClips(results: list[dict], outputPath: Path, threshDb: float) -> No
     print(f"\n  Bad clips: {len(bad)} / {len(results)} ({pct:.1f}%) written to {outputPath}")
 
 
+def _compositeScore(r: dict) -> float:
+    """
+    Compute a composite quality score in [0, 1] for a clip with deep metrics.
+
+    Each sub-score is normalised so that 1.0 = best quality for that dimension.
+    Weights are chosen to prioritise signal strength (RMS) while penalising
+    noise-like spectral structure, wind content, and temporal flatness.
+
+    Higher score = better clip.
+    """
+    # RMS: normalised over a practical range of −80 to 0 dBFS.
+    rmsScore = max(0.0, min(1.0, (r["rmsDb"] + 80.0) / 80.0))
+
+    # Silence: 0 frac = score 1.0, 1 frac = score 0.0.
+    silenceScore = 1.0 - float(r["silenceFrac"])
+
+    # Clipping: even a small fraction is very bad; saturate penalty at 1 %.
+    clippingScore = 1.0 - min(float(r["clippingFrac"]) * 100.0, 1.0)
+
+    # Spectral flatness: 0 (tonal) = score 1.0, 1 (noise) = score 0.0.
+    flatnessScore = 1.0 - float(r["spectralFlatness"])
+
+    # Edge/center ratio: ideal < 1.0; penalise above 1.0, saturate at 2.0.
+    ecrScore = max(0.0, 1.0 - max(0.0, float(r["edgeCenterRatio"]) - 1.0))
+
+    # Low-frequency ratio: lower = better.
+    lfScore = 1.0 - float(r["lowFreqRatio"])
+
+    # Spectral centroid: full score between 300–4000 Hz; ramp down outside.
+    c = float(r["spectralCentroid"])
+    if c < 300.0:
+        centroidScore = c / 300.0
+    elif c > 4000.0:
+        centroidScore = max(0.0, 1.0 - (c - 4000.0) / 4000.0)
+    else:
+        centroidScore = 1.0
+
+    return (
+        0.35 * rmsScore +
+        0.15 * silenceScore +
+        0.10 * clippingScore +
+        0.10 * flatnessScore +
+        0.10 * ecrScore +
+        0.10 * lfScore +
+        0.10 * centroidScore
+    )
+
+
+def _writeBestClips(clips: list[str], outputPath: Path) -> None:
+    """Write one filepath per line for the given (already-ranked) clip list."""
+    with open(outputPath, "w") as f:
+        for p in clips:
+            f.write(p + "\n")
+    print(f"\n  Best clips: {len(clips)} written to {outputPath}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -426,10 +511,28 @@ def main() -> None:
         help="dBFS threshold below which a clip is flagged as low quality "
              "(default: −55 dBFS).",
     )
+    p.add_argument(
+        "--keepBestN", type=int, default=None,
+        help="Retain only the N highest-quality clips for the selected class. "
+             "Requires --category and --outputBestClips. "
+             "Without --deepAnalysis, ranks by RMS only. "
+             "With --deepAnalysis, ranks by composite quality score.",
+    )
+    p.add_argument(
+        "--outputBestClips", type=Path, default=None,
+        help="Write one filepath per line for the N best clips selected by "
+             "--keepBestN.",
+    )
     args = p.parse_args()
 
     if not args.datasetCsv.exists():
         sys.exit(f"CSV not found: {args.datasetCsv}")
+
+    if args.keepBestN is not None:
+        if not args.category:
+            p.error("--keepBestN requires --category.")
+        if not args.outputBestClips:
+            p.error("--keepBestN requires --outputBestClips.")
 
     df = pd.read_csv(args.datasetCsv)
     print(f"\nLoaded {len(df)} clips from {args.datasetCsv}")
@@ -452,6 +555,15 @@ def main() -> None:
         _histo(rmsVals, bins=10, label=f"RMS dBFS  [{args.category}]")
         _printPhaseSummary(classDf, args.category, args.rmsThresholdDb)
 
+        # ── Fast-path best-N (RMS only, no audio reads) ───────────────────────
+        if args.keepBestN and not args.deepAnalysis:
+            sortedDf = classDf.assign(
+                _rmsDb=classDf["clipRms"].apply(_rmsDb)
+            ).sort_values("_rmsDb", ascending=False)
+            best = sortedDf["filepath"].tolist()[:args.keepBestN]
+            print(f"\n  Keeping best {len(best)} / {len(classDf)} clips by RMS.")
+            _writeBestClips(best, args.outputBestClips)
+
         # ── Deep analysis ─────────────────────────────────────────────────────
         if args.deepAnalysis:
             analysisDf = classDf
@@ -472,6 +584,12 @@ def main() -> None:
 
             if args.outputBadClips:
                 _writeBadClips(results, args.outputBadClips, args.rmsThresholdDb)
+
+            if args.keepBestN:
+                scored = sorted(results, key=_compositeScore, reverse=True)
+                best = [r["filepath"] for r in scored[:args.keepBestN]]
+                print(f"\n  Keeping best {len(best)} / {len(results)} clips by composite score.")
+                _writeBestClips(best, args.outputBestClips)
 
     elif args.deepAnalysis:
         print("\n  [note] --deepAnalysis without --category runs on the full dataset.")
