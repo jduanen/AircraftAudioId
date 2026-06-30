@@ -91,8 +91,8 @@ Computes seven additional metrics per clip using soundfile + librosa.
 
 | Metric | What it measures |
 |---|---|
-| `silenceFrac` | Fraction of samples with |x| < 0.005 |
-| `clippingFrac` | Fraction of samples with |x| > 0.99 (ADC saturation) |
+| `silenceFrac` | Fraction of samples with `\|x\| < 0.005` |
+| `clippingFrac` | Fraction of samples with `\|x\| > 0.99` (ADC saturation) |
 | `frameEnergyStd` | Std dev of per-0.1s-frame RMS across the clip |
 | `edgeCenterRatio` | RMS of first+last 1 s ÷ RMS of middle 3 s |
 | `spectralFlatness` | 0 = tonal/structured, 1 = broadband noise |
