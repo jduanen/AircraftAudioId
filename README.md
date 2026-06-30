@@ -154,6 +154,64 @@ python3 scripts/inspectDataset.py --recordingsDir <path>
     * a histogram of the distribution of coarse labels
     * an indication of clock skew between the devices
 
+* **`scripts/buildQualityDataset.py`**: builds a quality-filtered training dataset by keeping the best N clips per category
+  - for each coarse category, clips are ranked by audio quality and the top N retained; the filtered set is re-split by flyover event into train/val CSVs; null/background samples are always kept
+  - **Fast mode** (default): ranks by RMS dBFS from the `clipRms` column — no audio reads, runs in seconds
+  - **Deep mode** (`--deepAnalysis`): ranks by composite quality score across all 7 audio metrics (same weights as `evalClipQuality.py`) — requires soundfile + librosa, reads every WAV
+  - a clip is kept if it ranks in the top N for *any* of its categories (handles multi-aircraft clips correctly)
+  - e.g.,
+```bash
+# Fast: keep best 500 clips per category (no audio reads)
+python scripts/buildQualityDataset.py \
+    --datasetCsv dataset/dataset.csv \
+    --outputDir dataset_best/ \
+    --bestN 500
+
+# Deep: keep best 500 clips per category ranked by composite score
+python scripts/buildQualityDataset.py \
+    --datasetCsv dataset/dataset.csv \
+    --outputDir dataset_best/ \
+    --bestN 500 --deepAnalysis
+```
+  - options:
+    * `--datasetCsv <path>` (required): full dataset CSV from `buildDataset.py`
+    * `--outputDir <path>` (required): directory to write `train.csv` and `val.csv`
+    * `--bestN <int>` (required): clips to keep per category; categories with fewer clips keep all
+    * `--deepAnalysis`: rank by composite quality score instead of RMS
+    * `--trainFrac <float>` (default: 0.8): fraction of flyover events for the training split
+
+* **`scripts/buildQualityDatasetFromRecordings.py`**: extracts clips from raw recordings and keeps only the best N per category in a single pass
+  - combines clip extraction (`buildDataset.py`) with quality filtering (`buildQualityDataset.py`) — use this when starting from `recordings/` rather than a pre-built CSV
+  - e.g.,
+```bash
+# Fast: extract clips and keep best 500 per category by RMS
+python scripts/buildQualityDatasetFromRecordings.py \
+    --recordingsDir AircraftData/recordings \
+    --outputDir dataset_best/ \
+    --bestN 500 \
+    --faaDatabaseDir AircraftData/ReleasableAircraft
+
+# Deep: rank by composite quality score across 7 audio metrics
+python scripts/buildQualityDatasetFromRecordings.py \
+    --recordingsDir AircraftData/recordings \
+    --outputDir dataset_best/ \
+    --bestN 500 \
+    --faaDatabaseDir AircraftData/ReleasableAircraft \
+    --deepAnalysis
+```
+  - options:
+    * `--recordingsDir <path>` (required): directory produced by `record.py` (contains `audio/` and `metadata/`)
+    * `--outputDir <path>` (required): writes `clips/`, `dataset.csv`, `train.csv`, `val.csv`
+    * `--bestN <int>` (required): clips to keep per category; categories with fewer clips keep all
+    * `--faaDatabaseDir <path>`: FAA ReleasableAircraft directory — strongly recommended for correct category labels
+    * `--deepAnalysis`: rank by composite quality score instead of RMS
+    * `--clipSecs <float>` (default: 5.0): clip duration in seconds
+    * `--trainFrac <float>` (default: 0.8): fraction of flyover events for the training split
+    * `--maxDistanceKm <float>`: skip states where the aircraft is farther than this
+    * `--dropUnknown`: exclude clips whose categories are entirely unknown
+    * `--autoCorrectClock`: estimate per-recording clock skew from state timestamps
+    * `--workers <int>` (default: 1): parallel workers for clip extraction
+
 * **`scripts/evalClipQuality.py`**: evaluates audio clip quality per class using fast CSV-based metrics and optional deep per-file analysis
   - **Fast path** (no audio reads — uses pre-computed `clipRms` column in the CSV):
     * per-class table: mean/median/P10 RMS dBFS, % of clips below quality threshold, average distance and altitude
