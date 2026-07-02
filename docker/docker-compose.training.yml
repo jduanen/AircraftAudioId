@@ -30,6 +30,8 @@ services:
       - /home/jdn/Code/AircraftAudioId:/home/jdn/Code/AircraftAudioId:ro
       # Checkpoints are written to a separate writable volume
       - ${CHECKPOINT_DIR:-/home/jdn/Code/AircraftAudioId/checkpoints}:/checkpoints
+      # Persist PyTorch hub weights across runs (avoids re-downloading resnet18 etc.)
+      - /home/jdn/.cache/torch:/root/.cache/torch
 
     working_dir: /home/jdn/Code/AircraftAudioId
 
