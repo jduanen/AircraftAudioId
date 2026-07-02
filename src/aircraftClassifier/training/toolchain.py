@@ -255,6 +255,8 @@ def main():
                    choices=["32", "16-mixed", "bf16-mixed"],
                    help="AMP precision mode. bf16-mixed is optimal for Blackwell (DGX Spark GB10). "
                         "Use 16-mixed on Turing/Volta GPUs.")
+    p.add_argument("--patience",   type=int,  default=10,
+                   help="EarlyStopping patience in epochs (default: 10). Set > unfreezeEpoch when using --freezeBackbone.")
     p.add_argument("--compile",    action="store_true",
                    help="Apply torch.compile(mode='reduce-overhead') for ~15-20%% speedup.")
     p.add_argument("--outputDir",  type=str,  default="./checkpoints",
@@ -371,7 +373,7 @@ def main():
                 mode="max",
                 save_top_k=3,
             ),
-            pl.callbacks.EarlyStopping(monitor="val_f1", mode="max", patience=10),
+            pl.callbacks.EarlyStopping(monitor="val_f1", mode="max", patience=args.patience),
         ],
     )
     trainer.fit(model, trainLoader, valLoader)
