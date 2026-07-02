@@ -31,9 +31,13 @@ COMPOSE_FILE="${PROJECT_ROOT}/docker/docker-compose.training.yml"
 export CHECKPOINT_DIR="${CHECKPOINT_DIR:-${PROJECT_ROOT}/checkpoints}"
 mkdir -p "${CHECKPOINT_DIR}"
 
-# Pass extra args through an env var to avoid shell quoting issues at the
-# Compose command interpolation boundary.
-export TRAINING_ARGS="${*}"
+# --build flag forces image rebuild; strip it before forwarding to toolchain.py.
+BUILD=false
+REMAINING_ARGS=()
+for arg in "$@"; do
+    [[ "$arg" == "--build" ]] && BUILD=true || REMAINING_ARGS+=("$arg")
+done
+export TRAINING_ARGS="${REMAINING_ARGS[*]:-}"
 
 echo "=============================================="
 echo "  AircraftAudioId — Phase 1 Training"
@@ -41,10 +45,13 @@ echo "  Checkpoints : ${CHECKPOINT_DIR}"
 echo "  Extra args  : ${TRAINING_ARGS:-<none>}"
 echo "=============================================="
 
-docker compose \
-    --file "${COMPOSE_FILE}" \
-    --project-name aircraft-training \
-    build
+if $BUILD || ! docker image inspect aircraft-audio-training:latest >/dev/null 2>&1; then
+    echo "Building training image..."
+    docker compose \
+        --file "${COMPOSE_FILE}" \
+        --project-name aircraft-training \
+        build
+fi
 
 docker compose \
     --file "${COMPOSE_FILE}" \
