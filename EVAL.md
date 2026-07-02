@@ -30,7 +30,7 @@
 
 ### Backbone Freezing Notes
 
-- `--freezeBackbone` restricts training to layer4 + classifier head (~2M vs ~11M parameters). Strongest single lever for small datasets.
+- `--freezeBackbone` restricts training to layer4 + classifier head (~8.5M trainable, ~2.8M frozen). Strongest single lever for small datasets.
 - `--unfreezeEpoch N`: at epoch N the full backbone resumes training. The cosine LR schedule has decayed by then, so fine-tuning is gentle. Typical value: 25–35. Too early (epoch 20) resumes overfitting before the classifier head is stable. Too late (epoch 40+) with a very low LR underfits.
 - If train/val loss ratio spikes after unfreeze, the dataset is not large enough for full fine-tuning. Consider removing `--unfreezeEpoch` entirely.
 
