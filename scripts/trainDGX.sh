@@ -44,7 +44,7 @@ echo "=============================================="
 docker compose \
     --file "${COMPOSE_FILE}" \
     --project-name aircraft-training \
-    build --pull
+    build
 
 docker compose \
     --file "${COMPOSE_FILE}" \
