@@ -46,11 +46,7 @@ echo "  Extra args  : ${TRAINING_ARGS:-<none>}"
 echo "=============================================="
 
 if $BUILD || ! docker image inspect aircraft-audio-training:latest >/dev/null 2>&1; then
-    echo "Building training image..."
-    docker compose \
-        --file "${COMPOSE_FILE}" \
-        --project-name aircraft-training \
-        build
+    bash "${SCRIPT_DIR}/buildImageDGX.sh"
 fi
 
 docker compose \
