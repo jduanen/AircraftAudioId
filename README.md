@@ -339,7 +339,10 @@ Training runs inside a Docker container on the DGX Spark using scripts in `scrip
 
 * Phase 1: Classify by vehicle type (multi-label)
   - coarse category labels: `piston_single`, `piston_twin`, `turboprop`, `helicopter`, `business_jet`, `regional_jet`, `narrowbody_jet`, `widebody_jet`
-  - model: ResNet-18 backbone, 1-channel mel spectrogram input, multi-label sigmoid head, BCEWithLogitsLoss with pos_weight balancing, dropout 0.5, SpecAugment
+  - model: two backbone options via `--backbone`:
+    - `resnet18` (default): ImageNet-pretrained ResNet-18, 1-channel mel spectrogram input, SpecAugment
+    - `panns` (recommended): frozen AudioSet-pretrained PANNs CNN14 embeddings (2048-dim, precomputed) + MLP head. AudioSet includes aircraft/helicopter/jet-engine/propeller classes, so the features transfer far better than ImageNet
+  - both use a multi-label sigmoid head, BCEWithLogitsLoss with pos_weight balancing, dropout 0.5
   - code: `src/aircraftClassifier/training/toolchain.py` (`VehicleAudioDataset` + `VehicleSoundClassifier`)
 
 ```bash
@@ -360,6 +363,15 @@ bash scripts/trainDGX.sh \
     --maxEpochs 60 \
     --patience 20
 
+# Train on PANNs embeddings (recommended): precompute once, then train the MLP head
+bash scripts/precomputeEmbeddingsDGX.sh          # writes <clip>.panns.npy sidecars
+bash scripts/trainDGX.sh \
+    --useCategories \
+    --backbone panns \
+    --weightDecay 0.05 \
+    --maxEpochs 60 \
+    --patience 20
+
 # Evaluate a checkpoint
 bash scripts/evalDGX.sh \
     --checkpoint /checkpoints/best.ckpt \
@@ -367,6 +379,9 @@ bash scripts/evalDGX.sh \
     --valCsv dataset/val.csv \
     --useCategories --tuneThresholds
 ```
+
+  **Backbone selection:**
+  - `--backbone panns`: trains an MLP head (2048→512→256→nClasses) on precomputed PANNs embeddings. Requires `scripts/precomputeEmbeddings.py` (or `precomputeEmbeddingsDGX.sh`) to have been run first — training fails with a clear error if a `.panns.npy` sidecar is missing. `--freezeBackbone`/`--unfreezeEpoch`/`--compile` do not apply in this mode (the PANNs backbone is frozen offline); waveform augmentation and SpecAugment also do not apply. Epochs are very fast since inputs are 2048-dim vectors.
 
   **Overfitting controls** (all passed via `trainDGX.sh`):
   - `--freezeBackbone`: freeze conv1 through layer3; only layer4 + classifier are trained (~8.5M trainable, ~2.8M frozen). Strongest single lever for small datasets — prevents the backbone from memorizing training examples.
@@ -464,6 +479,11 @@ python scripts/precomputeSpecs.py \
 bash scripts/precomputeDGX.sh
 ```
   * The `.spec.npy` files are written alongside the WAVs and are included in the rsync to the DGX. Training falls back to computing spectrograms via librosa at runtime if a `.npy` file is missing.
+  * For `--backbone panns`, pre-compute PANNs embeddings instead (GPU recommended; run on the DGX). Writes a `<clip>.panns.npy` (2048-dim) sidecar alongside each WAV. There is no runtime fallback — training errors if a sidecar is missing:
+```bash
+bash scripts/precomputeEmbeddingsDGX.sh [--skipExisting]
+```
+  * The PANNs CNN14 checkpoint (~300 MB) is cached on the DGX host at `~/panns_data` and mounted into the container, so it downloads once.
 
 7) Verify dataset quality and quantity
     - run test to check dataset
@@ -487,6 +507,16 @@ sudo systemctl enable --now nvidia-persistenced
   * Phase 1: classify by propulsion type, engine count, and wing type
 ```bash
 bash scripts/syncToDGX.sh spark-8d0d.local
+
+# PANNs embeddings + MLP head (recommended; precompute embeddings first, see step 6)
+bash scripts/trainDGX.sh \
+    --useCategories \
+    --backbone panns \
+    --weightDecay 0.05 \
+    --maxEpochs 60 \
+    --patience 20
+
+# or: ResNet-18 on mel spectrograms with backbone freezing
 bash scripts/trainDGX.sh \
     --useCategories \
     --freezeBackbone \
@@ -504,9 +534,12 @@ bash scripts/evalDGX.sh \
     --checkpoint /checkpoints/best.ckpt \
     --labelEncoder /checkpoints/labelEncoder.json \
     --valCsv dataset/val.csv \
-    --useCategories --tuneThresholds
+    --useCategories --tuneThresholds \
+    [--saveThresholds /checkpoints/thresholds.json]
 ```
   - prints per-class AP, F1, precision, recall, and support; macro mAP and F1 summary
+  - the backbone (resnet18 or panns) is read from the checkpoint automatically; panns checkpoints evaluate against the `.panns.npy` sidecars
+  - `--saveThresholds` writes the tuned per-class thresholds to a JSON file (`{"class": threshold, ...}`) for inference to load
 
 11) Inference
   - ?
