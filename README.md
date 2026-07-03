@@ -356,10 +356,9 @@ bash scripts/trainDGX.sh --useCategories
 bash scripts/trainDGX.sh \
     --useCategories \
     --freezeBackbone \
-    --unfreezeEpoch 20 \
     --weightDecay 0.05 \
     --maxEpochs 60 \
-    --minClipsPerClass 100
+    --patience 20
 
 # Evaluate a checkpoint
 bash scripts/evalDGX.sh \
@@ -370,8 +369,9 @@ bash scripts/evalDGX.sh \
 ```
 
   **Overfitting controls** (all passed via `trainDGX.sh`):
-  - `--freezeBackbone`: freeze conv1 through layer3; only layer4 + classifier are trained. Strongest single lever for small datasets — prevents the backbone from memorizing training examples. Reduces trainable parameters from ~11M to ~2M.
-  - `--unfreezeEpoch N`: at epoch N, unfreeze the full backbone for end-to-end fine-tuning. The cosine LR schedule has decayed by then, so fine-tuning is gentle. Typical value: 15–25 (after early epochs establish a good classifier head).
+  - `--freezeBackbone`: freeze conv1 through layer3; only layer4 + classifier are trained (~8.5M trainable, ~2.8M frozen). Strongest single lever for small datasets — prevents the backbone from memorizing training examples.
+  - `--unfreezeEpoch N`: at epoch N, unfreeze the full backbone for end-to-end fine-tuning. The cosine LR schedule has decayed by then, so fine-tuning is gentle. For a 60-epoch run, use 30 (halfway point). Omit entirely if the dataset is small — full backbone fine-tuning on <500 clips/class causes severe overfitting (train/val loss ratio >10×).
+  - `--patience N`: EarlyStopping patience in epochs (default: 10). When using `--freezeBackbone` with `--unfreezeEpoch`, set patience higher than unfreezeEpoch (e.g., `--patience 45` for `--unfreezeEpoch 30`) so early stopping cannot fire before the backbone unfreezes.
   - `--weightDecay`: AdamW L2 penalty (default: 0.01). Increase to 0.05–0.1 for additional regularization.
   - `--minClipsPerClass N`: drop classes with fewer than N clips in the **val set** before building the label encoder. Classes below the threshold are excluded from training entirely — they are not learnable and poison val_f1 by contributing undefined recall to macro averaging. Counts against val (not combined) because a class with 0 val samples causes the warning even if it has many train clips. Prints a list of dropped classes at startup. Recommended: 10–20 (enough val samples for a stable F1 estimate).
   - `--noPosWeight`: disable automatic pos_weight balancing (not recommended unless the dataset is already balanced).
@@ -425,7 +425,8 @@ python3 scripts/record.py \
       --radiusKm 8 \
       --outputDir ./recordings \
       --readsbUrl http://adsbrx.lan/tar1090/data/aircraft.json \
-      --nullSampleInterval 90 --nullSampleDuration 10  # saves a 10 sec background clip every 1.5 mins when no aircraft is in range
+      --nullSampleInterval 90 --nullSampleDuration 10 \  # saves a 10 sec background clip every 1.5 mins when no aircraft is in range
+      --maxNullSamples 500  # stop saving null clips once 500 exist; counts existing files so safe to use when resuming
 ```
 
 5) Build training and validation dataset
@@ -474,7 +475,8 @@ python scripts/inspectDataset.py --recordingsDir ./recordings --datasetCsv ./dat
 
 8) Set up DGX Spark to train the models
   * Training runs inside `aircraft-audio-training:latest` (built from `docker/Dockerfile.training`)
-  * The image is built automatically by `trainDGX.sh` on first run; rebuild only needed when `Dockerfile.training` changes
+  * The image is built automatically by `trainDGX.sh` on first run and skipped on subsequent runs; pass `--build` to force a rebuild (only needed when `Dockerfile.training` changes)
+  * PyTorch hub weights (e.g. ResNet-18) are cached on the DGX host at `~/.cache/torch` and mounted into the container, so they are not re-downloaded on each run
   * Checkpoints land in `./checkpoints/` on the DGX host
   * The NVIDIA persistence daemon must be running or GPU containers will fail to start:
 ```bash
@@ -488,11 +490,11 @@ bash scripts/syncToDGX.sh spark-8d0d.local
 bash scripts/trainDGX.sh \
     --useCategories \
     --freezeBackbone \
-    --unfreezeEpoch 20 \
     --weightDecay 0.05 \
     --maxEpochs 60 \
-    --minClipsPerClass 100
+    --patience 20
 ```
+  * Pass `--build` to `trainDGX.sh` to force a Docker image rebuild (only needed when `Dockerfile.training` changes). The image is built automatically on first run and skipped on subsequent runs.
   * Phase 2: direction of travel (8 cardinal directions) — not yet implemented
   * Phase 3: speed estimation — not yet implemented
 
