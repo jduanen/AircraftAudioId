@@ -119,6 +119,7 @@ def _evalCsv(
     useCategories: bool,
     threshold: float,
     tuneThresholds: bool,
+    saveThresholds: str | None,
     batchSize: int,
     workers: int,
     device: torch.device,
@@ -180,6 +181,12 @@ def _evalCsv(
                     bestF1, bestT = f1, t
             thresholds[c] = bestT
 
+        if saveThresholds:
+            thresholdMap = {indexToLabel[c]: float(thresholds[c]) for c in range(nClasses)}
+            with open(saveThresholds, "w") as f:
+                json.dump(thresholdMap, f, indent=2)
+            print(f"  Thresholds saved to {saveThresholds}")
+
     binaryPreds = (allProbs >= thresholds).astype(int)
     prec, rec, f1, support = precision_recall_fscore_support(
         allLabels, binaryPreds, average=None, zero_division=0
@@ -232,6 +239,8 @@ def main():
                    help="Classification threshold (default: 0.5)")
     p.add_argument("--tuneThresholds", action="store_true",
                    help="Find per-class optimal threshold on the val set (reported alongside fixed threshold)")
+    p.add_argument("--saveThresholds", type=str, default=None,
+                   help="Write tuned per-class thresholds to this JSON file (requires --tuneThresholds)")
     p.add_argument("--batchSize",      type=int, default=64)
     p.add_argument("--workers",        type=int, default=4)
     args = p.parse_args()
@@ -267,6 +276,7 @@ def main():
             useCategories=args.useCategories,
             threshold=args.threshold,
             tuneThresholds=args.tuneThresholds,
+            saveThresholds=args.saveThresholds,
             batchSize=args.batchSize,
             workers=args.workers,
             device=device,
