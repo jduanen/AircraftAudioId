@@ -363,7 +363,9 @@ bash scripts/trainDGX.sh \
     --maxEpochs 60 \
     --patience 20
 
-# Train on PANNs embeddings (recommended): precompute once, then train the MLP head
+# Train on PANNs embeddings (recommended): build the image once (adds panns-inference),
+# precompute embeddings, then train the MLP head
+bash scripts/buildImageDGX.sh                    # first time only, or after Dockerfile.training changes
 bash scripts/precomputeEmbeddingsDGX.sh          # writes <clip>.panns.npy sidecars
 bash scripts/trainDGX.sh \
     --useCategories \
