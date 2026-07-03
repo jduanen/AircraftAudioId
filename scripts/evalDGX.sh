@@ -28,7 +28,7 @@ docker run --rm \
     --gpus all \
     --ipc host \
     -v "${PROJECT_ROOT}:/home/jdn/Code/AircraftAudioId:ro" \
-    -v "${CHECKPOINT_DIR}:/checkpoints:ro" \
+    -v "${CHECKPOINT_DIR}:/checkpoints" \
     -v "/home/jdn/.cache/torch:/root/.cache/torch" \
     --entrypoint python \
     "${IMAGE}" \
