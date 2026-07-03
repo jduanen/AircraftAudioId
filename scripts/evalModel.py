@@ -85,21 +85,28 @@ def _loadModel(checkpointPath: str, nClasses: int, device: torch.device) -> Vehi
 
 
 def _inferWav(wavPath: str, model: VehicleSoundClassifier, labelEncoder: dict[str, int],
-              threshold: float, device: torch.device) -> None:
-    targetLen = int(SAMPLE_RATE * CLIP_SECS)
-    waveform, _ = librosa.load(wavPath, sr=SAMPLE_RATE, mono=True, duration=CLIP_SECS)
-    if len(waveform) < targetLen:
-        waveform = np.pad(waveform, (0, targetLen - len(waveform)))
+              threshold: float, device: torch.device, backbone: str = "resnet18") -> None:
+    if backbone == "panns":
+        from panns_inference import AudioTagging
+        audio, _ = librosa.load(wavPath, sr=32000, mono=True)
+        tagger = AudioTagging(checkpoint_path=None, device=device.type)
+        _, embedding = tagger.inference(audio[None, :])
+        x = torch.from_numpy(embedding).float().to(device)
+    else:
+        targetLen = int(SAMPLE_RATE * CLIP_SECS)
+        waveform, _ = librosa.load(wavPath, sr=SAMPLE_RATE, mono=True, duration=CLIP_SECS)
+        if len(waveform) < targetLen:
+            waveform = np.pad(waveform, (0, targetLen - len(waveform)))
 
-    mel = librosa.feature.melspectrogram(
-        y=waveform, sr=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
-    )
-    spec = torch.from_numpy(
-        librosa.power_to_db(mel, top_db=80)
-    ).unsqueeze(0).unsqueeze(0).float().to(device)
+        mel = librosa.feature.melspectrogram(
+            y=waveform, sr=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
+        )
+        x = torch.from_numpy(
+            librosa.power_to_db(mel, top_db=80)
+        ).unsqueeze(0).unsqueeze(0).float().to(device)
 
     with torch.no_grad():
-        logits = model(spec)
+        logits = model(x)
         probs = torch.sigmoid(logits).cpu().numpy()[0]
 
     indexToLabel = {v: k for k, v in labelEncoder.items()}
@@ -123,6 +130,7 @@ def _evalCsv(
     batchSize: int,
     workers: int,
     device: torch.device,
+    backbone: str = "resnet18",
 ) -> None:
     from sklearn.metrics import (
         precision_recall_fscore_support,
@@ -131,7 +139,8 @@ def _evalCsv(
     )
 
     valDf = pd.read_csv(valCsv)
-    ds = VehicleAudioDataset(valDf, labelEncoder, augment=False, useCategories=useCategories)
+    ds = VehicleAudioDataset(valDf, labelEncoder, augment=False, useCategories=useCategories,
+                             backbone=backbone)
     loader = torch.utils.data.DataLoader(
         ds, batch_size=batchSize, shuffle=False,
         num_workers=workers, pin_memory=(device.type == "cuda"),
@@ -257,6 +266,11 @@ def main():
 
     model = _loadModel(args.checkpoint, nClasses, device)
 
+    # Older checkpoints predate the backbone hparam; they are all ResNet.
+    backbone = model.hparams.get("backbone", "resnet18")
+    if backbone != "resnet18":
+        print(f"Backbone: {backbone}")
+
     if model.hparams.nClasses != nClasses:
         sys.exit(
             f"  Checkpoint outputs {model.hparams.nClasses} classes but label encoder has "
@@ -266,7 +280,7 @@ def main():
         )
 
     if args.wav:
-        _inferWav(args.wav, model, labelEncoder, args.threshold, device)
+        _inferWav(args.wav, model, labelEncoder, args.threshold, device, backbone=backbone)
 
     if args.valCsv:
         _evalCsv(
@@ -280,6 +294,7 @@ def main():
             batchSize=args.batchSize,
             workers=args.workers,
             device=device,
+            backbone=backbone,
         )
 
 

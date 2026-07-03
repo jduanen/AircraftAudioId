@@ -88,10 +88,12 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
         augment: bool = False,
         bgNoiseDir: str | None = None,
         useCategories: bool = False,
+        backbone: str = "resnet18",
     ):
         self.df = df.reset_index(drop=True)
         self.labelEncoder = labelEncoder
         self.nClasses = len(labelEncoder)
+        self.backbone = backbone
         labelCol = (
             "type_categories"
             if useCategories and "type_categories" in df.columns
@@ -110,6 +112,21 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int):
         wavPath = self._filepaths[idx]
+
+        if self.backbone == "panns":
+            embPath = Path(wavPath).parent / (Path(wavPath).stem + ".panns.npy")
+            if not embPath.exists():
+                raise FileNotFoundError(
+                    f"Missing PANNs embedding {embPath} — "
+                    f"run scripts/precomputeEmbeddings.py first."
+                )
+            emb = torch.from_numpy(np.load(embPath)).float()
+            typeLabel = torch.zeros(self.nClasses)
+            for t in self._parsedLabels[idx]:
+                if t in self.labelEncoder:
+                    typeLabel[self.labelEncoder[t]] = 1.0
+            return emb, typeLabel
+
         specPath = Path(wavPath).parent / (Path(wavPath).stem + ".spec.npy")
 
         if specPath.exists():
@@ -147,6 +164,7 @@ class VehicleSoundClassifier(pl.LightningModule):
         weightDecay: float = 0.01,
         freezeBackbone: bool = False,
         unfreezeEpoch: int | None = None,
+        backbone: str = "resnet18",
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["posWeight"])
@@ -154,25 +172,39 @@ class VehicleSoundClassifier(pl.LightningModule):
         # load_from_checkpoint doesn't hit a state_dict mismatch at eval time.
         self.register_buffer("posWeight", posWeight, persistent=False)
 
-        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-        resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.backbone = nn.Sequential(*list(resnet.children())[:-1])
+        if backbone == "panns":
+            # Input is a precomputed 2048-dim PANNs embedding; the "backbone"
+            # already ran offline in scripts/precomputeEmbeddings.py.
+            self.backbone = nn.Identity()
+            self.classifier = nn.Sequential(
+                nn.Linear(2048, 512),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(256, nClasses),
+            )
+        else:
+            resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+            resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.backbone = nn.Sequential(*list(resnet.children())[:-1])
 
-        # Freeze conv1..layer3 (indices 0-6); keep layer4 (7) + avgpool (8) trainable.
-        # Unfreezes fully at unfreezeEpoch if set.
-        if freezeBackbone:
-            for i, child in enumerate(self.backbone.children()):
-                if i < 7:
-                    for param in child.parameters():
-                        param.requires_grad = False
+            # Freeze conv1..layer3 (indices 0-6); keep layer4 (7) + avgpool (8) trainable.
+            # Unfreezes fully at unfreezeEpoch if set.
+            if freezeBackbone:
+                for i, child in enumerate(self.backbone.children()):
+                    if i < 7:
+                        for param in child.parameters():
+                            param.requires_grad = False
 
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, nClasses),
-        )
+            self.classifier = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(256, nClasses),
+            )
 
         self.trainF1 = torchmetrics.F1Score(
             task="multilabel", num_labels=nClasses, average="macro"
@@ -244,6 +276,10 @@ def main():
                         "Prevents rare classes with no val samples from poisoning val_f1.")
     p.add_argument("--noPosWeight", action="store_true",
                    help="Disable automatic pos_weight class balancing in BCEWithLogitsLoss")
+    p.add_argument("--backbone",   type=str,   default="resnet18",
+                   choices=["resnet18", "panns"],
+                   help="Feature extractor. 'panns' trains an MLP head on precomputed "
+                        "AudioSet-pretrained PANNs embeddings (run scripts/precomputeEmbeddings.py first).")
     p.add_argument("--weightDecay",     type=float, default=0.01,
                    help="AdamW weight_decay (default: 0.01). Increase to 0.05–0.1 for regularization.")
     p.add_argument("--freezeBackbone",  action="store_true",
@@ -262,6 +298,10 @@ def main():
     p.add_argument("--outputDir",  type=str,  default="./checkpoints",
                    help="Directory for model checkpoints.")
     args = p.parse_args()
+
+    if args.backbone == "panns" and (args.freezeBackbone or args.unfreezeEpoch or args.compile):
+        p.error("--freezeBackbone/--unfreezeEpoch/--compile do not apply with --backbone panns "
+                "(the PANNs backbone is frozen offline; only the MLP head is trained).")
 
     torch.backends.cudnn.benchmark = True
 
@@ -328,13 +368,17 @@ def main():
 
     print()
 
+    # Augmentation operates on waveforms/spectrograms, so it does not apply to
+    # precomputed PANNs embeddings.
     trainDs = VehicleAudioDataset(
-        trainDf, labelEncoder, augment=True,
+        trainDf, labelEncoder, augment=(args.backbone != "panns"),
         bgNoiseDir=args.bgNoiseDir, useCategories=args.useCategories,
+        backbone=args.backbone,
     )
     valDs = VehicleAudioDataset(
         valDf, labelEncoder, augment=False,
         useCategories=args.useCategories,
+        backbone=args.backbone,
     )
 
     trainLoader = torch.utils.data.DataLoader(
@@ -354,6 +398,7 @@ def main():
         weightDecay=args.weightDecay,
         freezeBackbone=args.freezeBackbone,
         unfreezeEpoch=args.unfreezeEpoch,
+        backbone=args.backbone,
     )
 
     if args.compile:

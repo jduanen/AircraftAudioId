@@ -4,6 +4,7 @@ torchaudio
 pytorch-lightning
 torchmetrics
 audiomentations
+panns-inference
 
 # Data / metrics
 scikit-learn

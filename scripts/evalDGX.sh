@@ -30,6 +30,7 @@ docker run --rm \
     -v "${PROJECT_ROOT}:/home/jdn/Code/AircraftAudioId:ro" \
     -v "${CHECKPOINT_DIR}:/checkpoints" \
     -v "/home/jdn/.cache/torch:/root/.cache/torch" \
+    -v "/home/jdn/panns_data:/root/panns_data" \
     --entrypoint python \
     "${IMAGE}" \
     /home/jdn/Code/AircraftAudioId/scripts/evalModel.py \

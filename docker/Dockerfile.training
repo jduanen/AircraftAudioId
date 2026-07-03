@@ -30,7 +30,13 @@ RUN pip install --no-cache-dir \
     "audiomentations>=0.38" \
     "librosa>=0.10" \
     "pandas>=2.0" \
-    "scikit-learn>=1.4"
+    "scikit-learn>=1.4" \
+    "matplotlib"
+
+# panns-inference and torchlibrosa declare torch as a dependency; --no-deps
+# prevents pip from replacing the NGC torch with a PyPI wheel. Their other
+# deps (librosa, numpy, matplotlib) are installed above.
+RUN pip install --no-cache-dir --no-deps panns-inference torchlibrosa
 
 # Mount point matches the host path so CSV absolute clip paths remain valid.
 WORKDIR /home/jdn/Code/AircraftAudioId
