@@ -369,9 +369,11 @@ def main():
         callbacks=[
             pl.callbacks.ModelCheckpoint(
                 dirpath=args.outputDir,
+                filename="epoch={epoch:02d}-val_f1={val_f1:.3f}",
                 monitor="val_f1",
                 mode="max",
                 save_top_k=3,
+                auto_insert_metric_name=False,
             ),
             pl.callbacks.EarlyStopping(monitor="val_f1", mode="max", patience=args.patience),
         ],
