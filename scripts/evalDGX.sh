@@ -29,6 +29,7 @@ docker run --rm \
     --ipc host \
     -v "${PROJECT_ROOT}:/home/jdn/Code/AircraftAudioId:ro" \
     -v "${CHECKPOINT_DIR}:/checkpoints:ro" \
+    -v "/home/jdn/.cache/torch:/root/.cache/torch" \
     --entrypoint python \
     "${IMAGE}" \
     /home/jdn/Code/AircraftAudioId/scripts/evalModel.py \
