@@ -468,6 +468,7 @@ python3 scripts/buildDataset.py \
 6) Pre-compute mel spectrograms
   * Saves a `<clip>.spec.npy` file alongside each WAV in `dataset/clips/`. Training loads these directly instead of computing spectrograms on the fly, which avoids a CPU bottleneck in the DataLoader.
   * Run once after building the dataset, and again whenever new clips are added.
+  * Also **run again (without `--skipExisting`) whenever the mel config in `toolchain.py` changes** (`N_FFT`/`HOP_LENGTH`/`N_MELS`/`FMAX`) — there is no staleness check, so stale `.spec.npy` files from an old config are loaded silently.
   * On the recording server (CPU only, no GPU needed):
 ```bash
 python scripts/precomputeSpecs.py \

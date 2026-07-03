@@ -31,6 +31,18 @@ from ..augmentation.audioAug import buildAugPipeline
 SAMPLE_RATE = 44100  # 22050
 CLIP_SECS   = 5.0
 
+# Mel spectrogram config. fmax=8000 reallocates all N_MELS bins to the band
+# that actually contains aircraft signal (92-99% of energy is <200 Hz; spectral
+# centroids top out ~3800-3900 Hz) instead of spending most of them on the
+# 8000-22050 Hz range where there's essentially nothing. n_fft=2048 (up from
+# 1024) halves the underlying FFT bin width (43.1 Hz -> 21.5 Hz) for finer
+# resolution within that low-frequency band specifically. See DESIGN_NOTES.md
+# "Experiment Log — Backbone & Spectrogram Investigation" for the analysis.
+N_FFT      = 2048
+HOP_LENGTH = 512
+N_MELS     = 128
+FMAX       = 8000
+
 
 def _specAugment(spec: torch.Tensor, freqMaskF: int = 20, timeMaskT: int = 40) -> torch.Tensor:
     spec = spec.clone()
@@ -140,7 +152,8 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
             if self.augmentFn:
                 waveform = self.augmentFn(waveform, sample_rate=SAMPLE_RATE)
             mel = librosa.feature.melspectrogram(
-                y=waveform, sr=SAMPLE_RATE, n_fft=1024, hop_length=512, n_mels=128,
+                y=waveform, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
+                n_mels=N_MELS, fmax=FMAX,
             )
             spec = torch.from_numpy(
                 librosa.power_to_db(mel, top_db=80)

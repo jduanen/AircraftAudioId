@@ -14,7 +14,9 @@
     * Exhaust: varies widely by vehicle type
     * Wind/aero noise: broadband, speed-dependent
   - a higher n_fft gives better frequency resolution for separating these
-    --> TODO need to come up with the same for aircraft flyover noise
+    --> answered 2026-07-03, see Experiment Log below: aircraft flyover energy is
+        almost entirely <200 Hz; old config (n_fft=1024, fmax=22050) only resolves
+        it into 5-6 bins. Switched to n_fft=2048, fmax=8000.
   - multi-task loss balancing still needs tuning
     * see multiTaskLoss.py
   - segmentation/windowing strategy still matters a lot
@@ -283,3 +285,58 @@ configs_to_try = [
 
 * Model Training Process
   - **TBD**
+
+* Experiment Log — Backbone & Spectrogram Investigation (2026-07-03)
+  - Context: 8-class categorical Phase 1, ~1000 curated clips/class (dataset_best1000),
+    frozen-backbone ResNet-18 plateaued at mAP 0.405 / tuned Macro-F1 0.449-0.460.
+    Three classes stayed weak across every run: turboprop (AP ~0.28), narrowbody_jet
+    (AP ~0.22-0.26), business_jet (AP ~0.42-0.44).
+  - PANNs embeddings test (frozen AudioSet CNN14, 2048-dim, MLP head):
+    * hypothesis: AudioSet pretraining (includes aircraft/helicopter/jet-engine/propeller
+      classes) should transfer better than ImageNet features on spectrograms
+    * result: mAP 0.387-0.406, Macro-F1 0.429 — statistically a wash with ResNet-18,
+      not the expected 0.50+. No systematic per-class advantage; helicopter and
+      turboprop (the classes AudioSet models most directly) showed no real lift.
+      One class (widebody_jet) was clearly worse under PANNs (AP 0.31 vs 0.45),
+      suggesting the pooled whole-clip embedding loses information (duration,
+      low-frequency harmonics) that the full 5 s spectrogram retains.
+    * conclusion: backbone choice is not the bottleneck. Two architecturally very
+      different feature extractors land in the same mAP band and fail on the same
+      classes — that consistency points at the input representation or the data,
+      not model capacity.
+  - Clip quality investigation (`scripts/evalClipQuality.py`) on the actual curated
+    train+val set (not the raw candidate pool):
+    * RMS/loudness: weak classes are NOT quieter. turboprop (-37.1 dBFS mean) and
+      narrowbody_jet (-35.5 dBFS) are louder than piston_twin (-45.5 dBFS), which is
+      the best-performing class (AP 0.81). Rules out SNR as the explanation.
+    * Silence fraction: inversely correlated with performance (best class has the
+      MOST silence, 73%; worst classes have the least, 43-55%) — not a quality flag.
+    * Clipping: 0% everywhere. Spectral flatness: near-zero (tonal) everywhere.
+      No noise-dominance or saturation issue on any class.
+    * Low-frequency energy ratio: 92-99% of energy sits below 200 Hz, universal
+      across ALL classes (not a differentiator between weak/strong classes) — but
+      revealed the representational issue below.
+  - Spectrogram resolution check: with the config in place at the time
+    (n_fft=1024, hop=512, n_mels=128, sr=44100, fmax=22050 default), computed how
+    many of the 128 mel bins actually cover the 0-200 Hz band where the signal lives:
+    * only 6/128 mel bins peak below 200 Hz
+    * the underlying STFT itself has only 5 frequency bins below 200 Hz (43.1 Hz
+      bin width) — the mel filterbank can't resolve finer than that regardless
+    * business_jet/narrowbody_jet/regional_jet are all recorded from similar
+      altitude (~4300-4700 ft) and distance (~2.8-3.0 km); the acoustic differences
+      between these jet subtypes plausibly live in subtle low-frequency engine
+      harmonic spacing — exactly the band this config resolves worst
+  - Decision: switch mel spectrogram config to **n_fft=2048, hop_length=512,
+    n_mels=128, fmax=8000** (was n_fft=1024, fmax=22050/default).
+    * fmax=8000 reallocates all 128 mel bins to the band that actually contains
+      aircraft signal (spectral centroids across classes topped out ~3800-3900 Hz)
+      instead of spending most of them above it
+    * n_fft=2048 halves the underlying FFT bin width (43.1 Hz -> 21.5 Hz),
+      giving finer resolution within the low-frequency band specifically
+    * time-frame count is unaffected (hop_length unchanged), so model input shape
+      and ResNet conv1 dims don't change
+    * requires regenerating all `.spec.npy` sidecars — old ones were computed
+      under the previous config and are silently wrong for the new one
+  - Still open: did this fix the three weak classes, or is the remaining gap
+    genuine data volume / acoustic ambiguity between similar jet subtypes?
+    Retrain-and-compare is the next step.

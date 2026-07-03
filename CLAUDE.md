@@ -141,15 +141,16 @@ Audio pipeline: raw WAV at 44100 Hz mono (no resampling) → mel-spectrogram →
 
 Spectrograms are pre-computed and cached as `<clip>.spec.npy` alongside each WAV (`scripts/precomputeSpecs.py`). `VehicleAudioDataset.__getitem__` loads the `.npy` directly if present; SpecAugment is applied at load time for the training set. Fall back to librosa at runtime if `.npy` is absent. **Note:** torchaudio is not used — it is ABI-incompatible with the NGC arm64 PyTorch container (`aoti_torch_abi_version` undefined symbol). Use librosa for all audio I/O and spectrogram computation.
 
-Active mel spectrogram config (`SAMPLE_RATE=44100`, `CLIP_SECS=5.0`):
+Active mel spectrogram config (`SAMPLE_RATE=44100`, `CLIP_SECS=5.0`), defined once in `toolchain.py` (`N_FFT`, `HOP_LENGTH`, `N_MELS`, `FMAX`) and imported by every script that computes spectrograms (`precomputeSpecs.py`, `evalModel.py`, `vizSpecs.py`):
 ```python
-{"n_mels": 128, "n_fft": 1024, "hop_length": 512}  # ~430 time frames per clip
+{"n_mels": 128, "n_fft": 2048, "hop_length": 512, "fmax": 8000}  # ~430 time frames per clip
 ```
+Changed 2026-07-03 from `{"n_mels": 128, "n_fft": 1024, "hop_length": 512}` (no fmax cap, i.e. 22050): 92–99% of aircraft flyover signal energy sits below 200 Hz, but the old config only resolved that band into 5–6 bins. `fmax=8000` reallocates all 128 mel bins to the band that actually contains signal instead of spending most of them on 8000–22050 Hz where there's essentially nothing; `n_fft=2048` halves the underlying FFT bin width (43.1 Hz → 21.5 Hz) for finer resolution within that band. Time-frame count and model input shape are unchanged (`hop_length` untouched). See `DESIGN_NOTES.md` "Experiment Log — Backbone & Spectrogram Investigation" for the full analysis. **Changing this config requires regenerating all `.spec.npy` sidecars** — `VehicleAudioDataset` loads them directly with no staleness check.
 
 Other configs to try:
 ```python
 {"n_mels": 64,  "n_fft": 512,  "hop_length": 256},   # higher time resolution
-{"n_mels": 256, "n_fft": 2048, "hop_length": 512},    # higher freq resolution
+{"n_mels": 256, "n_fft": 4096, "hop_length": 512, "fmax": 8000},  # even finer low-freq resolution
 ```
 
 Multi-vehicle decision framework (based on % of dataset with multiple aircraft):
