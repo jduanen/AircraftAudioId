@@ -1,0 +1,24 @@
+[Unit]
+Description=Aircraft audio and ADS-B recording service
+After=network.target
+
+[Service]
+Type=simple
+User=jdn
+Group=jdn
+WorkingDirectory=/home/jdn/Code/AircraftAudioId
+ExecStart=/home/jdn/Code/AircraftAudioId/venv/bin/python \
+    /home/jdn/Code/AircraftAudioId/scripts/record.py \
+    --lat 37.4599669 --lon -122.1652244 --radiusKm 4 --maxAltitudeFt 20000 \
+    --readsbUrl http://adsbrx.lan/tar1090/data/aircraft.json \
+    --nullSampleInterval 210 --nullSampleDuration 15 \
+    --faaDatabaseDir /home/jdn/Code/AircraftAudioId/data/ReleasableAircraft \
+    --datasetCsv /home/jdn/Code/AircraftAudioId/dataset/dataset.csv \
+    --outputDir /home/jdn/Code/AircraftAudioId/recordings \
+    --maxSamplesPerClass 2000 \
+    --dropUnknown
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
