@@ -16,6 +16,7 @@ ExecStart=/home/jdn/Code/AircraftAudioId/venv/bin/python \
     --datasetCsv /home/jdn/Code/AircraftAudioId/dataset/dataset.csv \
     --outputDir /home/jdn/Code/AircraftAudioId/recordings \
     --maxSamplesPerClass 2000 \
+    --maxNullSamples 500 \
     --dropUnknown
 Restart=on-failure
 RestartSec=5

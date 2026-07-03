@@ -100,6 +100,7 @@ class AircraftRecordingSystem:
         readsbUrl: str = "http://adsbrx.lan/data/aircraft.json",
         nullSampleIntervalSecs: Optional[float] = None,
         nullSampleDurationSecs: float = 10.0,
+        maxNullSamples: Optional[int] = None,
         postTriggerSecs: float = DEFAULT_POST_TRIGGER_SECS,
         faaDatabaseDir: Optional[Path] = None,
         datasetCsv: Optional[Path] = None,
@@ -114,6 +115,7 @@ class AircraftRecordingSystem:
         self.sampleRate = sampleRate
         self.nullSampleIntervalSecs = nullSampleIntervalSecs
         self.nullSampleDurationSecs = nullSampleDurationSecs
+        self.maxNullSamples = maxNullSamples
         self.postTriggerSecs = postTriggerSecs
 
         self.outputDir = Path(outputDir)
@@ -334,6 +336,10 @@ class AircraftRecordingSystem:
     def _nullSamplingLoop(self) -> None:
         while self._running:
             time.sleep(self.nullSampleIntervalSecs)
+            if self.maxNullSamples is not None:
+                existing = sum(1 for _ in self.metadataDir.glob("*_null.json"))
+                if existing >= self.maxNullSamples:
+                    return
             if not self._trackedAircraft and self.audioStream.isStreamHealthy(self.nullSampleDurationSecs):
                 now = time.time()
                 if now - self._lastNullSampleTime >= self.nullSampleIntervalSecs:

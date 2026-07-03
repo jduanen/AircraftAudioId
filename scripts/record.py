@@ -36,6 +36,9 @@ def main():
                         "in range.  Disabled by default.  Recommended: 120–300.")
     p.add_argument("--nullSampleDuration", type=float, default=10.0,
                    help="Duration of null clips in seconds (default: 10)")
+    p.add_argument("--maxNullSamples", type=int, default=None,
+                   help="Stop saving null clips once this many exist in outputDir. "
+                        "Counts existing files on each check, so safe to use when resuming.")
     p.add_argument("--postTriggerSecs", type=float, default=10.0,
                    help="Seconds to keep collecting departure states after the save trigger fires "
                         "(default: 10). Balances approach vs departure clips in the dataset.")
@@ -66,6 +69,7 @@ def main():
         readsbUrl=args.readsbUrl,
         nullSampleIntervalSecs=args.nullSampleInterval,
         nullSampleDurationSecs=args.nullSampleDuration,
+        maxNullSamples=args.maxNullSamples,
         postTriggerSecs=args.postTriggerSecs,
         faaDatabaseDir=args.faaDatabaseDir,
         datasetCsv=args.datasetCsv,
