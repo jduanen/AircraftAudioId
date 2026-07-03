@@ -14,6 +14,7 @@
 #
 # What is NOT synced:
 #   recordings/   — raw audio (large, not needed for training)
+#   datasets/     — only the one linked to by dataset/
 #   checkpoints/  — model output lives on the DGX Spark
 #   .git/         — not needed on the training machine
 #
@@ -41,6 +42,8 @@ rsync ${OPTS} -avz --progress \
     --exclude='.gitignore' \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
+    --exclude='aircraft_data/' \
+    --exclude='AircraftData/' \
     --exclude='checkpoints/' \
     --exclude='*.egg-info/' \
     --exclude='*.txt' \
@@ -50,6 +53,7 @@ rsync ${OPTS} -avz --progress \
     --exclude='cad/' \
     --exclude='DEPRECATED/' \
     --exclude='data/`' \
+    --exclude='datasets/' \
     --exclude='dataset_*/' \
     --exclude='docs/' \
     --exclude='etc/' \
@@ -61,7 +65,6 @@ rsync ${OPTS} -avz --progress \
     --exclude='tests/' \
     --exclude='tools/' \
     --exclude='venv/' \
-    --exclude='AircraftData/' \
     --filter='protect checkpoints/' \
     "${PROJECT_ROOT}/" \
     "${REMOTE_PATH}"
