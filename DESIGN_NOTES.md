@@ -412,11 +412,31 @@ configs_to_try = [
     `--unfreezeEpoch` unfreezes all four modules together. Trainable/frozen
     param counts are unchanged (~8.5M / ~2.8M) — the new stem+fuse add only
     ~14.7K params, folded into the frozen bucket.
-  - Still open: does giving each band its own stem let the network use each
-    one for the classes that actually need it, recovering both groups
-    simultaneously instead of landing at a blended midpoint? Does piston_twin
-    recover once its band's stem isn't fighting the other band's gradient
-    signal at conv1? Is the remaining narrowbody_jet gap (weakest class under
-    every config tried so far) genuine data volume / acoustic ambiguity
-    between similar jet subtypes rather than a spectrogram representation
-    issue? Retrain-and-compare is the next step.
+  - Result (dual-stem, epoch=37/val_f1=0.449 checkpoint): mAP 0.441 (best of
+    all 5 configs tried), Macro-F1 0.474 (ties the previous best, 0.475):
+    * turboprop 0.397 — best-ever score by a wide margin (previous best 0.316)
+    * widebody_jet 0.469 — nearly matches its single-fmax peak (0.491)
+    * piston_twin 0.846 — substantially recovered from the fused-conv1
+      regression (0.789), close to its own peak (0.855)
+    * but helicopter 0.376 and piston_single 0.341 dipped below where they'd
+      been under fused-conv1 (0.392, 0.424) — separating the stems reduced
+      cross-class competition but didn't eliminate it; the trunk and
+      classifier head are still shared across all 8 classes
+    * narrowbody_jet 0.291 — still under 0.30 across every one of the 5
+      configs tried (0.255/0.273/0.245/0.295/0.291). Same ceiling regardless
+      of spectrogram or architecture change is a strong signal this class is
+      data-limited, not representation-limited.
+  - **BANKED as the production config (2026-07-03).** Dual-stem architecture
+    + dual-band spectrogram (FMAX_LOW=8000/FMIN_HIGH=8000) is the current
+    best result across mAP, Macro-F1, and per-class breadth. Progression
+    across the 5 experiments: mAP 0.405 -> 0.430 -> 0.409 -> 0.424 -> 0.441;
+    gains per iteration are shrinking while engineering cost per iteration is
+    flat or rising (dual-stem was the most invasive change so far). Treating
+    this as the point of diminishing returns for spectrogram/architecture
+    tuning specifically.
+  - Next lever: data, not architecture. narrowbody_jet's flat ceiling across
+    every representation tried is the strongest evidence in this log that a
+    specific class is capped by data (volume, quality, or genuine acoustic
+    ambiguity with regional_jet/business_jet — the three classes recorded
+    from similar altitude/distance, see "Clip quality investigation" above)
+    rather than by anything fixable through more architecture work.
