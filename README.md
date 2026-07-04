@@ -543,6 +543,14 @@ bash scripts/evalDGX.sh \
   - prints per-class AP, F1, precision, recall, and support; macro mAP and F1 summary
   - the backbone (resnet18 or panns) is read from the checkpoint automatically; panns checkpoints evaluate against the `.panns.npy` sidecars
   - `--saveThresholds` writes the tuned per-class thresholds to a JSON file (`{"class": threshold, ...}`) for inference to load
+  - `scripts/evalBestDGX.sh` finds the checkpoint with the highest val_f1 (parsed from its filename, e.g. `epoch=16-val_f1=0.451.ckpt`) and runs `evalDGX.sh` on it, so you don't have to `ls -lt checkpoints/` and copy a filename by hand:
+```bash
+bash scripts/evalBestDGX.sh \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv \
+    --useCategories --tuneThresholds \
+    [--saveThresholds /checkpoints/thresholds.json]
+```
 
 11) Inference
   - ?
