@@ -23,7 +23,7 @@ import librosa
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from aircraftClassifier.training.toolchain import (
-    SAMPLE_RATE, CLIP_SECS, N_FFT, HOP_LENGTH, N_MELS, FMAX,
+    SAMPLE_RATE, CLIP_SECS, _dualBandMelDb,
 )
 
 
@@ -37,11 +37,7 @@ def _computeAndSave(wavPath: str, skipExisting: bool = False) -> None:
     if len(waveform) < targetLen:
         waveform = np.pad(waveform, (0, targetLen - len(waveform)))
 
-    mel = librosa.feature.melspectrogram(
-        y=waveform, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
-        n_mels=N_MELS, fmax=FMAX,
-    )
-    np.save(specPath, librosa.power_to_db(mel, top_db=80).astype(np.float32))
+    np.save(specPath, _dualBandMelDb(waveform))
 
 
 def main():

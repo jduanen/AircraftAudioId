@@ -352,8 +352,38 @@ configs_to_try = [
       high-bypass fan harmonics) that fmax=8000 discarded outright
   - Follow-up: raised fmax to 12000 (n_fft=2048, n_mels=128 unchanged) to give
     the jets back some headroom while keeping most of the low-frequency
-    resolution gain. Retrain-and-compare pending.
-  - Still open: did fmax=12000 recover business_jet/widebody_jet without
-    losing the helicopter/piston_single/turboprop gains? Is the remaining
-    narrowbody_jet gap genuine data volume / acoustic ambiguity between
-    similar jet subtypes rather than a spectrogram config issue?
+    resolution gain.
+  - Result (fmax=12000, epoch=14/val_f1=0.452 checkpoint): mAP 0.409, Macro-F1
+    0.462 — WORSE than fmax=8000 (0.430 / 0.473) in aggregate, though still
+    better than the original no-cap config (0.405 / 0.449):
+    * widebody_jet +0.089, piston_single +0.100 vs fmax=8000 (recovered, as
+      hoped — real content in 8-12 kHz)
+    * but helicopter -0.155, turboprop -0.136, regional_jet -0.088 vs fmax=8000
+      (collapsed — these had been the biggest fmax=8000 winners)
+    * net: not diminishing returns, a genuine tug-of-war. Widening the band
+      helped the classes that need 8-12 kHz content but diluted resolution
+      for the classes whose signal is concentrated low, because both groups
+      draw from the same fixed 128-mel-bin budget under one global cutoff.
+    * conclusion: no single global fmax can serve both class groups — this is
+      the empirical case for a genuinely different representation, not just
+      more tuning of one scalar.
+  - Decision: replace the single global fmax with a **dual-channel, non-
+    overlapping mel spectrogram** — channel 0 covers 0-8000 Hz (full 128-mel
+    budget, the band that won for helicopter/turboprop/piston_twin), channel 1
+    covers 8000 Hz-Nyquist (full 128-mel budget, the band that won for
+    widebody_jet/piston_single/business_jet). Implemented as a 2-channel input to the same
+    ResNet-18 (conv1 changed from Conv2d(1,64,...) to Conv2d(2,64,...) — conv1
+    is replaced from scratch regardless of channel count, so no pretrained
+    weight remapping issue). Rejected full parallel/duplicate backbones (2x
+    11M params) as too much added capacity for ~800-1000 clips/class given
+    the overfitting fights already underway (freezeBackbone, patience, weight
+    decay). `_dualBandMelDb()` in toolchain.py is now the single source of
+    truth for spectrogram computation, imported by precomputeSpecs.py,
+    evalModel.py, and vizSpecs.py.
+  - Still open: does the dual-channel input let the network use each band
+    for the classes that actually need it, recovering both groups
+    simultaneously instead of trading one off against the other? Is the
+    remaining narrowbody_jet gap (weakest class under every config tried so
+    far) genuine data volume / acoustic ambiguity between similar jet
+    subtypes rather than a spectrogram representation issue? Retrain-and-
+    compare is the next step.

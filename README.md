@@ -340,7 +340,7 @@ Training runs inside a Docker container on the DGX Spark using scripts in `scrip
 * Phase 1: Classify by vehicle type (multi-label)
   - coarse category labels: `piston_single`, `piston_twin`, `turboprop`, `helicopter`, `business_jet`, `regional_jet`, `narrowbody_jet`, `widebody_jet`
   - model: two backbone options via `--backbone`:
-    - `resnet18` (default): ImageNet-pretrained ResNet-18, 1-channel mel spectrogram input, SpecAugment
+    - `resnet18` (default): ImageNet-pretrained ResNet-18, dual-channel mel spectrogram input (channel 0: 0-8kHz, channel 1: 8kHz-Nyquist, each with the full 128-mel resolution budget — see `DESIGN_NOTES.md`), SpecAugment
     - `panns` (recommended): frozen AudioSet-pretrained PANNs CNN14 embeddings (2048-dim, precomputed) + MLP head. AudioSet includes aircraft/helicopter/jet-engine/propeller classes, so the features transfer far better than ImageNet
   - both use a multi-label sigmoid head, BCEWithLogitsLoss with pos_weight balancing, dropout 0.5
   - code: `src/aircraftClassifier/training/toolchain.py` (`VehicleAudioDataset` + `VehicleSoundClassifier`)

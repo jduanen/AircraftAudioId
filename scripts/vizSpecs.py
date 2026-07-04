@@ -21,25 +21,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from aircraftClassifier.training.toolchain import (
-    SAMPLE_RATE, CLIP_SECS, N_FFT, HOP_LENGTH, N_MELS, FMAX,
-)
+from aircraftClassifier.training.toolchain import SAMPLE_RATE, CLIP_SECS, _dualBandMelDb
 
 
-def _loadSpec(wavPath: str) -> np.ndarray:
+def _loadSpec(wavPath: str, channel: int) -> np.ndarray:
+    """Return one band (0=low, 1=high) of the dual-band mel spectrogram, shape (N_MELS, nFrames)."""
     specPath = Path(wavPath).parent / (Path(wavPath).stem + ".spec.npy")
     if specPath.exists():
-        return np.load(specPath)
+        return np.load(specPath)[channel]
     import librosa
     targetLen = int(SAMPLE_RATE * CLIP_SECS)
     waveform, _ = librosa.load(wavPath, sr=SAMPLE_RATE, mono=True, duration=CLIP_SECS)
     if len(waveform) < targetLen:
         waveform = np.pad(waveform, (0, targetLen - len(waveform)))
-    mel = librosa.feature.melspectrogram(
-        y=waveform, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
-        n_mels=N_MELS, fmax=FMAX,
-    )
-    return librosa.power_to_db(mel, top_db=80).astype(np.float32)
+    return _dualBandMelDb(waveform)[channel]
 
 
 def main():
@@ -51,6 +46,8 @@ def main():
     p.add_argument("--output",   type=str, default=None, help="Save to file instead of displaying")
     p.add_argument("--seed",     type=int, default=42,  help="Random seed for sampling (change to see different clips)")
     p.add_argument("--play",     action="store_true",   help="Click a spectrogram to play its audio")
+    p.add_argument("--channel",  type=int, default=0, choices=[0, 1],
+                   help="Which dual-band channel to display: 0=low band (<=8kHz), 1=high band (>=8kHz). Default: 0")
     args = p.parse_args()
 
     df = pd.read_csv(args.csv)
@@ -70,7 +67,7 @@ def main():
 
     axToPath = {}
     for i, (_, row) in enumerate(sample.iterrows()):
-        spec = _loadSpec(row["filepath"])
+        spec = _loadSpec(row["filepath"], args.channel)
         axes[i].imshow(spec, origin="lower", aspect="auto", cmap="magma", vmin=-80, vmax=0)
         axes[i].set_title(", ".join(json.loads(row[labelCol])), fontsize=8)
         axes[i].tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
@@ -80,6 +77,7 @@ def main():
         ax.set_visible(False)
 
     title = Path(args.csv).name
+    title += f" — {'low' if args.channel == 0 else 'high'} band"
     if args.category:
         title += f" — {args.category}"
     fig.suptitle(title, fontsize=10)

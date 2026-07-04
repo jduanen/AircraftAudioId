@@ -137,20 +137,27 @@ ResNet-18 backbone (chosen over ResNet-34 to reduce overfitting on the current s
 - **Direction** — 8-class softmax, masked loss (backprop only on single-vehicle samples)
 - **Speed** — scalar regression, masked loss (single-vehicle samples only)
 
-Audio pipeline: raw WAV at 44100 Hz mono (no resampling) → mel-spectrogram → dB scale → SpecAugment (train only) → ResNet-18 (first conv adapted for 1-channel input). Dropout is 0.5 in the classifier head.
+Audio pipeline: raw WAV at 44100 Hz mono (no resampling) → dual-band mel-spectrogram → dB scale → SpecAugment (train only) → ResNet-18 (first conv adapted for 2-channel input). Dropout is 0.5 in the classifier head.
 
 Spectrograms are pre-computed and cached as `<clip>.spec.npy` alongside each WAV (`scripts/precomputeSpecs.py`). `VehicleAudioDataset.__getitem__` loads the `.npy` directly if present; SpecAugment is applied at load time for the training set. Fall back to librosa at runtime if `.npy` is absent. **Note:** torchaudio is not used — it is ABI-incompatible with the NGC arm64 PyTorch container (`aoti_torch_abi_version` undefined symbol). Use librosa for all audio I/O and spectrogram computation.
 
-Active mel spectrogram config (`SAMPLE_RATE=44100`, `CLIP_SECS=5.0`), defined once in `toolchain.py` (`N_FFT`, `HOP_LENGTH`, `N_MELS`, `FMAX`) and imported by every script that computes spectrograms (`precomputeSpecs.py`, `evalModel.py`, `vizSpecs.py`):
+Active mel spectrogram config (`SAMPLE_RATE=44100`, `CLIP_SECS=5.0`): a **dual-channel, non-overlapping mel spectrogram**, computed once by `_dualBandMelDb()` in `toolchain.py` and imported by every script that touches spectrograms (`precomputeSpecs.py`, `evalModel.py`, `vizSpecs.py`). Each `.spec.npy` is shape `(2, N_MELS, ~431)`:
 ```python
-{"n_mels": 128, "n_fft": 2048, "hop_length": 512, "fmax": 12000}  # ~430 time frames per clip
+# channel 0: 0-8000 Hz,        full N_MELS budget
+{"n_mels": 128, "n_fft": 2048, "hop_length": 512, "fmax": FMAX_LOW}    # FMAX_LOW=8000
+# channel 1: 8000 Hz-Nyquist,  full N_MELS budget
+{"n_mels": 128, "n_fft": 2048, "hop_length": 512, "fmin": FMIN_HIGH}   # FMIN_HIGH=8000
 ```
-Changed 2026-07-03 from `{"n_mels": 128, "n_fft": 1024, "hop_length": 512}` (no fmax cap, i.e. 22050): 92–99% of aircraft flyover signal energy sits below 200 Hz, but the old config only resolved that band into 5–6 bins. Capping `fmax` reallocates mel bins to the band that actually contains signal instead of spending most of them where there's essentially nothing; `n_fft=2048` halves the underlying FFT bin width (43.1 Hz → 21.5 Hz) for finer resolution within that band. First tried `fmax=8000`: mAP 0.405→0.430, but business_jet/widebody_jet regressed (large jets likely have real discriminative content up to ~10–12 kHz — APU/high-bypass fan harmonics — that 8000 was discarding). Raised to `fmax=12000` to recover that headroom while keeping most of the low-frequency resolution gain. Time-frame count and model input shape are unchanged (`hop_length` untouched). See `DESIGN_NOTES.md` "Experiment Log — Backbone & Spectrogram Investigation" for the full analysis. **Changing this config requires regenerating all `.spec.npy` sidecars** — `VehicleAudioDataset` loads them directly with no staleness check.
+Changed 2026-07-03, in two steps, from `{"n_mels": 128, "n_fft": 1024, "hop_length": 512}` (single channel, no fmax cap i.e. 22050):
+1. **n_fft 1024→2048, single global fmax.** 92–99% of aircraft flyover signal energy sits below 200 Hz, but the old config only resolved that band into 5–6 mel bins; n_fft=2048 halves the underlying FFT bin width (43.1 Hz → 21.5 Hz). Tried `fmax=8000` (mAP 0.405→0.430, but business_jet/widebody_jet regressed) then `fmax=12000` (recovered those two, but helicopter/turboprop/regional_jet collapsed — mAP 0.409, worse than fmax=8000). No single global cutoff serves both class groups — real tug-of-war over the shared 128-mel-bin budget, not diminishing returns.
+2. **Dual-channel.** Give each frequency region its own full 128-mel budget instead of splitting one budget with a single cutoff. `conv1` changed `Conv2d(1,64,...)` → `Conv2d(2,64,...)` (conv1 is replaced from scratch regardless of channel count, so no pretrained-weight remapping issue). Rejected full parallel/duplicate backbones (2× 11M params) as too much added capacity for ~800–1000 clips/class given the overfitting already fought with `--freezeBackbone`/patience/weight-decay.
+
+Time-frame count and non-conv1 model dims are unchanged (`hop_length` untouched). See `DESIGN_NOTES.md` "Experiment Log — Backbone & Spectrogram Investigation" for the full analysis. **Changing `N_FFT`/`HOP_LENGTH`/`N_MELS`/`FMAX_LOW`/`FMIN_HIGH` requires regenerating all `.spec.npy` sidecars** — `VehicleAudioDataset` loads them directly with no staleness check.
 
 Other configs to try:
 ```python
 {"n_mels": 64,  "n_fft": 512,  "hop_length": 256},   # higher time resolution
-{"n_mels": 256, "n_fft": 4096, "hop_length": 512, "fmax": 8000},  # even finer low-freq resolution
+{"n_mels": 256, "n_fft": 4096, "hop_length": 512},   # even finer resolution per band
 ```
 
 Multi-vehicle decision framework (based on % of dataset with multiple aircraft):

@@ -31,17 +31,36 @@ from ..augmentation.audioAug import buildAugPipeline
 SAMPLE_RATE = 44100  # 22050
 CLIP_SECS   = 5.0
 
-# Mel spectrogram config. fmax=8000 reallocates all N_MELS bins to the band
-# that actually contains aircraft signal (92-99% of energy is <200 Hz; spectral
-# centroids top out ~3800-3900 Hz) instead of spending most of them on the
-# 8000-22050 Hz range where there's essentially nothing. n_fft=2048 (up from
-# 1024) halves the underlying FFT bin width (43.1 Hz -> 21.5 Hz) for finer
-# resolution within that low-frequency band specifically. See DESIGN_NOTES.md
-# "Experiment Log — Backbone & Spectrogram Investigation" for the analysis.
+# Mel spectrogram config. n_fft=2048 (up from 1024) halves the underlying FFT
+# bin width (43.1 Hz -> 21.5 Hz). See DESIGN_NOTES.md "Experiment Log —
+# Backbone & Spectrogram Investigation" for the analysis behind these values.
+#
+# Dual-band, non-overlapping mel channels instead of one global fmax: a single
+# cutoff can't serve every class — fmax=8000 helped helicopter/turboprop
+# (whose signal is concentrated low) but hurt widebody_jet/piston_single
+# (which have real content in 8-12 kHz); fmax=12000 was the reverse. Each
+# channel gets the full N_MELS budget for its own band instead of splitting it.
 N_FFT      = 2048
 HOP_LENGTH = 512
 N_MELS     = 128
-FMAX       = 12000
+FMAX_LOW   = 8000    # channel 0: 0-8000 Hz, full N_MELS bins
+FMIN_HIGH  = 8000     # channel 1: 8000 Hz-Nyquist, full N_MELS bins
+
+
+def _dualBandMelDb(waveform: np.ndarray) -> np.ndarray:
+    """Compute two non-overlapping mel-band spectrograms and stack as (2, N_MELS, nFrames)."""
+    low = librosa.feature.melspectrogram(
+        y=waveform, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
+        n_mels=N_MELS, fmax=FMAX_LOW,
+    )
+    high = librosa.feature.melspectrogram(
+        y=waveform, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
+        n_mels=N_MELS, fmin=FMIN_HIGH,
+    )
+    return np.stack([
+        librosa.power_to_db(low, top_db=80),
+        librosa.power_to_db(high, top_db=80),
+    ]).astype(np.float32)
 
 
 def _specAugment(spec: torch.Tensor, freqMaskF: int = 20, timeMaskT: int = 40) -> torch.Tensor:
@@ -142,7 +161,7 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
         specPath = Path(wavPath).parent / (Path(wavPath).stem + ".spec.npy")
 
         if specPath.exists():
-            spec = torch.from_numpy(np.load(specPath)).unsqueeze(0).float()
+            spec = torch.from_numpy(np.load(specPath)).float()
             if self.augment:
                 spec = _specAugment(spec)
         else:
@@ -151,13 +170,7 @@ class VehicleAudioDataset(torch.utils.data.Dataset):
                 waveform = np.pad(waveform, (0, self.targetLen - len(waveform)))
             if self.augmentFn:
                 waveform = self.augmentFn(waveform, sample_rate=SAMPLE_RATE)
-            mel = librosa.feature.melspectrogram(
-                y=waveform, sr=SAMPLE_RATE, n_fft=N_FFT, hop_length=HOP_LENGTH,
-                n_mels=N_MELS, fmax=FMAX,
-            )
-            spec = torch.from_numpy(
-                librosa.power_to_db(mel, top_db=80)
-            ).unsqueeze(0).float()
+            spec = torch.from_numpy(_dualBandMelDb(waveform)).float()
 
         typeLabel = torch.zeros(self.nClasses)
         for t in self._parsedLabels[idx]:
@@ -200,7 +213,10 @@ class VehicleSoundClassifier(pl.LightningModule):
             )
         else:
             resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-            resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            # 2 input channels: dual-band mel spectrogram (see _dualBandMelDb).
+            # conv1 is replaced from scratch either way, so there's no pretrained
+            # weight to remap here.
+            resnet.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, bias=False)
             self.backbone = nn.Sequential(*list(resnet.children())[:-1])
 
             # Freeze conv1..layer3 (indices 0-6); keep layer4 (7) + avgpool (8) trainable.
