@@ -337,6 +337,23 @@ configs_to_try = [
       and ResNet conv1 dims don't change
     * requires regenerating all `.spec.npy` sidecars — old ones were computed
       under the previous config and are silently wrong for the new one
-  - Still open: did this fix the three weak classes, or is the remaining gap
-    genuine data volume / acoustic ambiguity between similar jet subtypes?
-    Retrain-and-compare is the next step.
+  - Result (fmax=8000, retrained frozen-backbone ResNet-18, epoch=16/val_f1=0.451
+    checkpoint): mAP 0.405 -> 0.430, Macro-F1 0.449 -> 0.473. Real net gain, but
+    per-class pattern didn't match the hypothesis cleanly:
+    * helicopter +0.095 AP, piston_single +0.063, regional_jet +0.045,
+      turboprop +0.039, narrowbody_jet +0.018, piston_twin +0.029 (6/8 improved)
+    * business_jet -0.041, widebody_jet -0.048 (regressed)
+    * narrowbody_jet still weakest overall (AP 0.273) — jet-subtype confusion
+      not resolved
+    * interpretation: fmax=8000 helped classes whose signal is genuinely
+      sub-1kHz (rotor blade-passage frequency, piston combustion rate) most,
+      but was too aggressive for the largest jets — business/widebody plausibly
+      have real discriminative content in the 8-12 kHz range (APU noise,
+      high-bypass fan harmonics) that fmax=8000 discarded outright
+  - Follow-up: raised fmax to 12000 (n_fft=2048, n_mels=128 unchanged) to give
+    the jets back some headroom while keeping most of the low-frequency
+    resolution gain. Retrain-and-compare pending.
+  - Still open: did fmax=12000 recover business_jet/widebody_jet without
+    losing the helicopter/piston_single/turboprop gains? Is the remaining
+    narrowbody_jet gap genuine data volume / acoustic ambiguity between
+    similar jet subtypes rather than a spectrogram config issue?
