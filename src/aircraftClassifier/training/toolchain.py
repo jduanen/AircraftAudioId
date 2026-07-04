@@ -213,17 +213,40 @@ class VehicleSoundClassifier(pl.LightningModule):
             )
         else:
             resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-            # 2 input channels: dual-band mel spectrogram (see _dualBandMelDb).
-            # conv1 is replaced from scratch either way, so there's no pretrained
-            # weight to remap here.
-            resnet.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, bias=False)
-            self.backbone = nn.Sequential(*list(resnet.children())[:-1])
 
-            # Freeze conv1..layer3 (indices 0-6); keep layer4 (7) + avgpool (8) trainable.
-            # Unfreezes fully at unfreezeEpoch if set.
+            # Dual-stem: each frequency band (see _dualBandMelDb) gets its own
+            # stem so band-specific features develop before the bands are
+            # merged, instead of a single Conv2d(2,64,...) that blends both
+            # bands from the very first layer (tried first; didn't cleanly
+            # separate the two classes of results — see DESIGN_NOTES.md).
+            # Both stems are fresh-initialized (mirrors the original single-
+            # channel conv1 replacement, which also discarded pretrained
+            # weights), so there's no pretrained weight to remap here either.
+            def _makeStem() -> nn.Sequential:
+                return nn.Sequential(
+                    nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),
+                    nn.BatchNorm2d(64),
+                    nn.ReLU(inplace=True),
+                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+                )
+
+            self.stemLow  = _makeStem()   # channel 0: 0-8000 Hz
+            self.stemHigh = _makeStem()   # channel 1: 8000 Hz-Nyquist
+            # Fuse the two 64-channel stem outputs (concat -> 128ch) back down
+            # to 64ch so the pretrained layer1-4 trunk sees the input width
+            # it was designed for.
+            self.fuse = nn.Conv2d(128, 64, kernel_size=1, bias=False)
+            # Shared trunk: pretrained layer1-4 + avgpool, untouched.
+            self.trunk = nn.Sequential(*list(resnet.children())[4:-1])
+
+            # Freeze both stems + fuse + layer1-3; keep layer4 + avgpool
+            # trainable. Unfreezes fully at unfreezeEpoch if set.
             if freezeBackbone:
-                for i, child in enumerate(self.backbone.children()):
-                    if i < 7:
+                for module in (self.stemLow, self.stemHigh, self.fuse):
+                    for param in module.parameters():
+                        param.requires_grad = False
+                for i, child in enumerate(self.trunk.children()):
+                    if i < 3:  # layer1, layer2, layer3; layer4(3)+avgpool(4) stay trainable
                         for param in child.parameters():
                             param.requires_grad = False
 
@@ -246,7 +269,12 @@ class VehicleSoundClassifier(pl.LightningModule):
         )
 
     def forward(self, x):
-        return self.classifier(self.backbone(x))
+        if self.hparams.backbone == "panns":
+            return self.classifier(self.backbone(x))
+        low  = self.stemLow(x[:, 0:1])
+        high = self.stemHigh(x[:, 1:2])
+        fused = self.fuse(torch.cat([low, high], dim=1))
+        return self.classifier(self.trunk(fused))
 
     def _loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         return nn.BCEWithLogitsLoss(pos_weight=self.posWeight)(logits, labels)
@@ -277,8 +305,9 @@ class VehicleSoundClassifier(pl.LightningModule):
             and self.current_epoch == self.hparams.unfreezeEpoch
         ):
             print(f"\n[epoch {self.current_epoch}] Unfreezing full backbone.")
-            for param in self.backbone.parameters():
-                param.requires_grad = True
+            for module in (self.stemLow, self.stemHigh, self.fuse, self.trunk):
+                for param in module.parameters():
+                    param.requires_grad = True
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(

@@ -380,10 +380,43 @@ configs_to_try = [
     decay). `_dualBandMelDb()` in toolchain.py is now the single source of
     truth for spectrogram computation, imported by precomputeSpecs.py,
     evalModel.py, and vizSpecs.py.
-  - Still open: does the dual-channel input let the network use each band
-    for the classes that actually need it, recovering both groups
-    simultaneously instead of trading one off against the other? Is the
-    remaining narrowbody_jet gap (weakest class under every config tried so
-    far) genuine data volume / acoustic ambiguity between similar jet
-    subtypes rather than a spectrogram representation issue? Retrain-and-
-    compare is the next step.
+  - Result (dual-channel Conv2d(2,64,...), epoch=16/val_f1=0.449 checkpoint):
+    mAP 0.424, Macro-F1 0.475 (best Macro-F1 so far; mAP second-best behind
+    fmax=8000's 0.430). NOT a clean best-of-both-worlds:
+    * narrowbody_jet 0.295 — best-ever score for the weakest class
+    * piston_twin 0.789 — regressed BELOW every prior config (0.806-0.855),
+      the biggest single-class casualty of this change
+    * helicopter 0.392, turboprop 0.278 — better than fmax=12000 but short of
+      fmax=8000's peak (0.426, 0.316); widebody_jet 0.415, business_jet 0.402
+      — better than fmax=8000 but short of fmax=12000's peak (0.491, 0.431)
+    * every "recovered" class landed at a midpoint between its two single-fmax
+      extremes rather than at (or above) its own best — a blend, not a
+      resolution of the tug-of-war
+    * likely cause: `Conv2d(2,64,...)` applies joint filters that sum across
+      both input channels starting at the very first layer — low-band and
+      high-band information gets blended immediately rather than each band
+      developing independent features first. A single-channel conv1
+      inherently cannot keep the bands' information separate no matter how
+      the input is stacked.
+  - Decision: replace the single fused conv1 with a genuine **dual-stem
+    architecture** — `stemLow`/`stemHigh`, each a fresh
+    Conv2d(1,64,7x7,stride=2)+BatchNorm2d+ReLU+MaxPool mirroring ResNet's own
+    stem, one per band. Outputs concatenated (64+64=128ch) then reduced by a
+    new learned `fuse` 1x1 Conv2d(128,64) back to the width the pretrained
+    `layer1-4` trunk expects, so the shared trunk (~11.2M of the 11.3M total
+    params) is untouched and stays pretrained/ImageNet-initialized. This lets
+    each band develop independent low-level features before merging, instead
+    of blending them in the first layer. `--freezeBackbone` now freezes both
+    stems + fuse + layer1-3 (mirrors the original design's precedent of
+    freezing the freshly-initialized conv1 alongside pretrained layer1-3);
+    `--unfreezeEpoch` unfreezes all four modules together. Trainable/frozen
+    param counts are unchanged (~8.5M / ~2.8M) — the new stem+fuse add only
+    ~14.7K params, folded into the frozen bucket.
+  - Still open: does giving each band its own stem let the network use each
+    one for the classes that actually need it, recovering both groups
+    simultaneously instead of landing at a blended midpoint? Does piston_twin
+    recover once its band's stem isn't fighting the other band's gradient
+    signal at conv1? Is the remaining narrowbody_jet gap (weakest class under
+    every config tried so far) genuine data volume / acoustic ambiguity
+    between similar jet subtypes rather than a spectrogram representation
+    issue? Retrain-and-compare is the next step.
