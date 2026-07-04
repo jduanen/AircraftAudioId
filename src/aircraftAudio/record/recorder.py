@@ -224,6 +224,10 @@ class AircraftRecordingSystem:
         self._saveSummary()
         print("Stopped.")
 
+    def dumpSessionSummary(self) -> None:
+        """Write a session summary snapshot without stopping the running system."""
+        self._saveSummary()
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

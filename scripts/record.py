@@ -5,8 +5,13 @@ Start the aircraft recording system on the main machine.
 Usage:
     python scripts/record.py --lat 37.5 --lon -122.3 --radiusKm 20 --outputDir ./recordings
                              [--listenPort 9876] [--readsbUrl http://adsbrx.lan]
+
+Send SIGUSR1 to the running process to write a session summary snapshot
+(session_<timestamp>.json in outputDir) without stopping the recorder:
+    kill -SIGUSR1 <pid>
 """
 
+import signal
 import sys
 from pathlib import Path
 
@@ -76,6 +81,9 @@ def main():
         maxSamplesPerClass=args.maxSamplesPerClass,
         dropUnknown=args.dropUnknown,
     )
+
+    signal.signal(signal.SIGUSR1, lambda signum, frame: system.dumpSessionSummary())
+
     system.start()
 
 
