@@ -41,7 +41,7 @@ CLIP_SECS   = 5.0
 N_FFT      = 2048
 HOP_LENGTH = 512
 N_MELS     = 128
-FMAX       = 8000
+FMAX       = 12000
 
 
 def _specAugment(spec: torch.Tensor, freqMaskF: int = 20, timeMaskT: int = 40) -> torch.Tensor:
