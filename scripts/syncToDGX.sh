@@ -42,7 +42,7 @@ rsync ${OPTS} -avz --progress \
     --exclude='.gitignore' \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
-    --exclude='aircraft_data/' \
+    --exclude='aircraft_data' \
     --exclude='AircraftData/' \
     --exclude='checkpoints/' \
     --exclude='*.egg-info/' \
@@ -53,14 +53,14 @@ rsync ${OPTS} -avz --progress \
     --exclude='cad/' \
     --exclude='DEPRECATED/' \
     --exclude='data/`' \
-    --exclude='datasets/' \
+    --exclude='datasets' \
     --exclude='dataset_*/' \
     --exclude='docs/' \
     --exclude='etc/' \
     --exclude='hold/' \
     --exclude='inspect/' \
     --exclude='pyproject.toml' \
-    --exclude='recordings/' \
+    --exclude='recordings' \
     --exclude='sim/' \
     --exclude='tests/' \
     --exclude='tools/' \
