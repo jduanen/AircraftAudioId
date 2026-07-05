@@ -552,6 +552,13 @@ bash scripts/evalBestDGX.sh \
     --useCategories --tuneThresholds \
     [--saveThresholds /checkpoints/thresholds.json]
 ```
+  - `--confusionFor <category>` shows what the model actually predicts for clips truly labeled that category — mean predicted probability and top-1 ("best guess") breakdown across every class. Diagnoses which specific class a weak class is being absorbed into, rather than just reporting that its AP is low:
+```bash
+bash scripts/evalBestDGX.sh \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv --useCategories \
+    --confusionFor regional_jet
+```
 
 11) Inference
   - ?
