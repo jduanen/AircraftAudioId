@@ -440,3 +440,76 @@ configs_to_try = [
     ambiguity with regional_jet/business_jet — the three classes recorded
     from similar altitude/distance, see "Clip quality investigation" above)
     rather than by anything fixable through more architecture work.
+
+* Data Volume Rebuild (2026-07-04): 1000/class -> 3000/class, and the
+  regional_jet collapse
+  - Rebuilt the curated dataset via `buildQualityDatasetFromRecordings.py
+    --bestN 3000 --deepAnalysis --faaDatabaseDir data/ReleasableAircraft`
+    (previous build used `--bestN 1000`, ranking method and FAA-DB usage
+    unconfirmed). Every class capped at 3000 except none needed to fall back
+    (piston_twin's raw pool grew to 3386, comfortably clearing 3000).
+  - Result (dual-stem architecture, unchanged): mAP 0.441 -> 0.5244,
+    Macro-F1 0.474 -> 0.5322 — by far the largest single jump of the whole
+    investigation. 6/8 classes improved substantially (piston_single +0.22,
+    business_jet +0.21, widebody_jet +0.16, helicopter +0.04 to +0.14
+    depending on run, turboprop +0.11, narrowbody_jet +0.06 — finally broke
+    its flat 0.30 ceiling from every prior config). Confirms data volume, not
+    architecture, was the remaining bottleneck.
+  - **regional_jet collapsed: 0.40 -> 0.18-0.20 AP**, now by far the worst
+    class (previous floor across all 5 earlier configs was 0.245). Reproduced
+    across two independent training runs on the same rebuilt dataset
+    (0.204, 0.180) — not a fluke.
+  - Diagnostic process (see EVAL.md "Confusion Breakdown" for the tool this
+    added, `evalModel.py --confusionFor <class>`):
+    1. Hypothesis: FAA-based relabeling (first build to use
+       `--faaDatabaseDir`) reassigned regional_jet clips to business_jet
+       under seat-count rules. Checked directly against the raw pool:
+       **ruled out** — 100% identical category labels for all 30,433 clips
+       common to both the old and new raw pools.
+    2. Hypothesis: multi-label co-occurrence with confusable classes
+       increased. **Ruled out** — 0% multi-label overlap for regional_jet in
+       both old and new curated sets.
+    3. Hypothesis: going 3x deeper into the quality-ranked pool pulled in
+       disproportionately worse regional_jet clips specifically. **Ruled
+       out** — the RMS gap between original-selection and newly-added clips
+       (7.9 dB) is unremarkable; every class shows a similar 7-10 dB gap,
+       including classes that improved substantially (business_jet 9.2 dB,
+       piston_twin 9.8 dB).
+    4. **Confirmed via `--confusionFor regional_jet`**: among 497 true
+       regional_jet val clips, narrowbody_jet has both the highest mean
+       predicted probability (0.513 vs regional_jet's own 0.481) and the
+       highest top-1 "best guess" rate (27.8% vs regional_jet's own 18.9%).
+       The model isn't merely uncertain about regional_jet — it's
+       systematically absorbing it into narrowbody_jet specifically.
+  - Root cause: regional_jet (20-100 seats) and narrowbody_jet (101-220
+    seats) are adjacent FAA seat-count bins (`faaDatabase.py::_deriveCategory`)
+    on what is acoustically closer to a continuum than a hard boundary —
+    aircraft near the 100-seat line (e.g. larger E-Jet variants) plausibly
+    sound genuinely similar regardless of which side of the threshold their
+    registry seat count places them on. narrowbody_jet's 3x larger, more
+    confident training signal this round likely sharpened its decision
+    boundary enough to claim adjacent acoustic territory that used to be
+    ambiguous/shared.
+  - **Decision (2026-07-04): merged regional_jet into narrowbody_jet.**
+    Chose this over collecting more regional_jet data because the confusion
+    is systematic and one-directional (narrowbody_jet wins the model's
+    top-1 guess even more often than regional_jet does for its own true
+    clips) — that pattern points at the ground-truth boundary itself being
+    too fine for audio to resolve, not at a fixable data-volume gap. Category
+    count: 8 -> 7.
+    * Code: `faaDatabase.py::_deriveCategory` — seat-count branches merged
+      (`<20`->business_jet, `20-220`->narrowbody_jet, `>220`->widebody_jet).
+      `typeCategories.py` — `_EXPLICIT` entries and the `_KEYWORD_RULES`
+      regional-jet block (crj/erj/e170-e195/atr keywords) now resolve to
+      narrowbody_jet; `regional_jet` removed from `CATEGORIES`.
+    * Data: relabeled `type_categories` in-place in the already-built CSVs
+      (train.csv/val.csv locally and at dataset_best3000) rather than
+      re-extracting from raw recordings — a label-only change, no audio
+      content differs. Result: narrowbody_jet's curated count doubled to
+      6000 (3000 original + 3000 former regional_jet, no overlap since
+      regional_jet had 0% multi-label co-occurrence), all other classes
+      unchanged at 3000. Total clip count unchanged (24000).
+    * Retrain pending: expect narrowbody_jet's AP to rise substantially
+      given it's now the largest class by a 2x margin, and Macro-F1/mAP to
+      improve now that a structurally unresolvable class isn't dragging the
+      macro average down.

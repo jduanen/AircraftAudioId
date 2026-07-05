@@ -7,10 +7,14 @@ Categories (ordered by typical acoustic signature):
     turboprop       — turboprop, single or twin (PC-12, TBM, King Air …)
     helicopter      — rotary-wing, any power plant
     business_jet    — light–large private/charter jets (Citation, Gulfstream, Phenom 300 …)
-    regional_jet    — small commercial jets up to ~100 seats (CRJ, ERJ-145/175 …)
-    narrowbody_jet  — mainline single-aisle jets (737, A320 family, A220 …)
+    narrowbody_jet  — single-aisle jets, ~20-220 seats (CRJ, ERJ, 737, A320 family, A220 …)
     widebody_jet    — twin-aisle jets (777, 787, A330, A350 …)
     unknown         — fallback when type is missing or unrecognised
+
+    regional_jet was merged into narrowbody_jet (2026-07-04): the model
+    systematically confused the two (see DESIGN_NOTES.md "Data Volume
+    Rebuild"), and the FAA seat-count split between them (100 seats) is a
+    registry threshold, not a demonstrated acoustic boundary.
 
 Usage:
     from aircraftAudio.dataset.typeCategories import typeToCategory
@@ -27,7 +31,6 @@ CATEGORIES = [
     "turboprop",
     "helicopter",
     "business_jet",
-    "regional_jet",
     "narrowbody_jet",
     "widebody_jet",
     "unknown",
@@ -75,14 +78,12 @@ _EXPLICIT: dict[str, str] = {
     "emb-505":                      "business_jet",    # Phenom 300
     "giv-x (g450)":                 "business_jet",
 
-    # ── Regional jets ─────────────────────────────────────────────────────────
-    "cl-600-2b19":                  "regional_jet",    # CRJ-200
-    "cl-600-2c10":                  "regional_jet",    # CRJ-700
-    "emb-135lr":                    "regional_jet",    # ERJ-145
-    "erj 170-200 ll":               "regional_jet",    # E175
-    "erj 170-200 lr":               "regional_jet",
-
-    # ── Narrowbody jets ───────────────────────────────────────────────────────
+    # ── Narrowbody jets (includes former regional_jet category) ──────────────
+    "cl-600-2b19":                  "narrowbody_jet",   # CRJ-200
+    "cl-600-2c10":                  "narrowbody_jet",   # CRJ-700
+    "emb-135lr":                    "narrowbody_jet",   # ERJ-145
+    "erj 170-200 ll":               "narrowbody_jet",   # E175
+    "erj 170-200 lr":               "narrowbody_jet",
     "airbus a220-300":              "narrowbody_jet",
     "737-7h4":                      "narrowbody_jet",
     "737-800":                      "narrowbody_jet",
@@ -172,15 +173,15 @@ _EXPLICIT: dict[str, str] = {
     "a339":                         "widebody_jet",    # A330-900neo
     "a359":                         "widebody_jet",    # A350-900
     "a388":                         "widebody_jet",    # A380-800
-    "e75l":                         "regional_jet",    # E175
-    "e75s":                         "regional_jet",    # E175
-    "e170":                         "regional_jet",
-    "e190":                         "regional_jet",
-    "e195":                         "regional_jet",
-    "crj2":                         "regional_jet",    # CRJ-200
-    "crj7":                         "regional_jet",    # CRJ-700
-    "crj9":                         "regional_jet",    # CRJ-900
-    "crjx":                         "regional_jet",    # CRJ-1000
+    "e75l":                         "narrowbody_jet",  # E175
+    "e75s":                         "narrowbody_jet",  # E175
+    "e170":                         "narrowbody_jet",
+    "e190":                         "narrowbody_jet",
+    "e195":                         "narrowbody_jet",
+    "crj2":                         "narrowbody_jet",  # CRJ-200
+    "crj7":                         "narrowbody_jet",  # CRJ-700
+    "crj9":                         "narrowbody_jet",  # CRJ-900
+    "crjx":                         "narrowbody_jet",  # CRJ-1000
 }
 
 
@@ -195,16 +196,14 @@ _KEYWORD_RULES: list[tuple[list[str], str]] = [
       "b787", "b777", "b767", "b747",
       "widebody", "wide body"], "widebody_jet"),
 
-    # Narrowbody
+    # Narrowbody (includes former regional_jet category)
     (["a220", "a319", "a320", "a321",
       "737", "757", "717", "md-80", "md-90",
-      "narrowbody", "narrow body"], "narrowbody_jet"),
-
-    # Regional jets
-    (["crj", "cl-600", "cl600",
+      "narrowbody", "narrow body",
+      "crj", "cl-600", "cl600",
       "erj", "embraer 1", "e170", "e175", "e190", "e195",
       "atr 42", "atr 72",
-      "regional jet"], "regional_jet"),
+      "regional jet"], "narrowbody_jet"),
 
     # Business jets
     (["citation", "gulfstream", "learjet", "lear ",

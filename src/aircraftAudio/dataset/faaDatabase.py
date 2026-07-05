@@ -14,9 +14,17 @@ Category derivation:
 
     For multi-engine jets, NO-SEATS is used to separate:
         <20 seats  → business_jet
-        20–100     → regional_jet
-        101–220    → narrowbody_jet
+        20–220     → narrowbody_jet
         >220       → widebody_jet
+
+    regional_jet and narrowbody_jet were merged into a single narrowbody_jet
+    category (2026-07-04): the model was systematically confusing the two
+    (narrowbody_jet was the model's top-1 guess for true regional_jet clips
+    more often than regional_jet itself), and the 100-seat split point is an
+    FAA registry threshold, not a demonstrated acoustic boundary — aircraft
+    near it plausibly sound the same regardless of which side their seat
+    count registers on. See DESIGN_NOTES.md "Data Volume Rebuild" for the
+    confusion-breakdown analysis behind this.
 
 Usage:
     db = FaaDatabase("path/to/ReleasableAircraft/")
@@ -184,8 +192,6 @@ def _deriveCategory(info: dict) -> str:
                 return "unknown"
             if noSeats < 20:
                 return "business_jet"
-            if noSeats <= 100:
-                return "regional_jet"
             if noSeats <= 220:
                 return "narrowbody_jet"
             return "widebody_jet"

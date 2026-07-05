@@ -71,6 +71,22 @@ Unweighted average of per-class F1 scores. Range [0, 1]; higher is better
 
 ---
 
+## Confusion Breakdown (`--confusionFor <category>`)
+
+A low AP for a class only tells you *that* it's weak, not *why*. `evalModel.py --confusionFor <category>` (via `evalDGX.sh`/`evalBestDGX.sh`) filters to val clips truly labeled that category and reports, across every class:
+
+| Column | Meaning |
+|---|---|
+| Mean Prob | Average predicted probability for that class among the true-category clips |
+| Top-1 Count / % | How often that class wins the argmax — the model's single best guess |
+
+**How to read it:**
+- If the true class's own mean prob / top-1 % is highest, the model is uncertain but not systematically wrong — likely a data volume or threshold-calibration problem.
+- If a *different* class has a higher mean prob or top-1 %, that's the model's actual confusion: it's being systematically absorbed into that other class. That points at either genuine acoustic similarity (e.g. two classes recorded at the same altitude/distance) or a labeling boundary problem (e.g. two categories split by a threshold — like FAA seat-count bins — that's easy for near-boundary aircraft to fall on the wrong side of, or where registry data feeding that threshold is often missing/stale).
+- This is a diagnostic, not a fix — it tells you what to investigate (class boundary logic, data selection, or genuine acoustic ambiguity), not how to resolve it.
+
+---
+
 ## Input Data Quality
 
 Two evaluation tiers are available via `scripts/evalClipQuality.py`.

@@ -338,7 +338,7 @@ python3 scripts/icaoLookup.py --recordingsDir ./recordings --counts --tracks \
 Training runs inside a Docker container on the DGX Spark using scripts in `scripts/`. All commands below are run from the Ubuntu recording server unless noted.
 
 * Phase 1: Classify by vehicle type (multi-label)
-  - coarse category labels: `piston_single`, `piston_twin`, `turboprop`, `helicopter`, `business_jet`, `regional_jet`, `narrowbody_jet`, `widebody_jet`
+  - coarse category labels (7; `regional_jet` merged into `narrowbody_jet` 2026-07-04, see `DESIGN_NOTES.md`): `piston_single`, `piston_twin`, `turboprop`, `helicopter`, `business_jet`, `narrowbody_jet`, `widebody_jet`
   - model: two backbone options via `--backbone`:
     - `resnet18` (default): ImageNet-pretrained ResNet-18 with a dual-stem front end — separate stems for the low (0-8kHz) and high (8kHz-Nyquist) mel bands, each with the full 128-mel resolution budget, concatenated and fused back to the pretrained trunk's expected width (see `DESIGN_NOTES.md`), SpecAugment
     - `panns` (recommended): frozen AudioSet-pretrained PANNs CNN14 embeddings (2048-dim, precomputed) + MLP head. AudioSet includes aircraft/helicopter/jet-engine/propeller classes, so the features transfer far better than ImageNet
@@ -557,7 +557,7 @@ bash scripts/evalBestDGX.sh \
 bash scripts/evalBestDGX.sh \
     --labelEncoder /checkpoints/labelEncoder.json \
     --valCsv dataset/val.csv --useCategories \
-    --confusionFor regional_jet
+    --confusionFor turboprop
 ```
 
 11) Inference
