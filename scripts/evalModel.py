@@ -115,6 +115,53 @@ def _inferWav(wavPath: str, model: VehicleSoundClassifier, labelEncoder: dict[st
         print(f"  {label:<23}  {probs[p]:6.3f}  {active:>6}")
 
 
+def _confusionBreakdown(
+    allProbs: np.ndarray,
+    allLabels: np.ndarray,
+    indexToLabel: dict[int, str],
+    targetClass: str,
+) -> None:
+    """
+    For clips whose ground truth includes targetClass, show what the model
+    actually predicts: mean probability assigned to every class, and how
+    often each class wins the argmax (i.e. what the model "thinks" the
+    clip is, treating the top-1 prediction as its best guess).
+    """
+    labelToIndex = {v: k for k, v in indexToLabel.items()}
+    if targetClass not in labelToIndex:
+        print(f"\n  [confusion] Unknown class '{targetClass}' — skipping.")
+        return
+
+    targetIdx = labelToIndex[targetClass]
+    mask = allLabels[:, targetIdx] == 1
+    nTarget = int(mask.sum())
+    if nTarget == 0:
+        print(f"\n  [confusion] No val clips labeled '{targetClass}' — skipping.")
+        return
+
+    subProbs = allProbs[mask]
+    meanProb = subProbs.mean(axis=0)
+    top1 = subProbs.argmax(axis=1)
+    nClasses = allProbs.shape[1]
+    top1Counts = np.bincount(top1, minlength=nClasses)
+
+    print(f"\n{'═'*60}")
+    print(f"  CONFUSION BREAKDOWN — true class: {targetClass}  (n={nTarget})")
+    print(f"{'═'*60}")
+    print(f"  {'Class':<22}  {'Mean Prob':>9}  {'Top-1 Count':>11}  {'Top-1 %':>8}")
+    print("  " + "─" * 56)
+    order = sorted(range(nClasses), key=lambda c: -meanProb[c])
+    for c in order:
+        label = indexToLabel.get(c, f"class_{c}")
+        marker = " *" if c == targetIdx else "  "
+        print(
+            f"  {label:<22}{marker}  {meanProb[c]:9.3f}  {top1Counts[c]:11d}  "
+            f"{100*top1Counts[c]/nTarget:7.1f}%"
+        )
+    print("  " + "─" * 56)
+    print(f"  (* = the true class itself)")
+
+
 def _evalCsv(
     valCsv: str,
     labelEncoder: dict[str, int],
@@ -127,6 +174,7 @@ def _evalCsv(
     workers: int,
     device: torch.device,
     backbone: str = "resnet18",
+    confusionFor: str | None = None,
 ) -> None:
     from sklearn.metrics import (
         precision_recall_fscore_support,
@@ -228,6 +276,9 @@ def _evalCsv(
         label = indexToLabel.get(c, f"class_{c}")
         print(f"    {label:<25}  {positiveRates[c]*100:5.1f}%")
 
+    if confusionFor:
+        _confusionBreakdown(allProbs, allLabels, indexToLabel, confusionFor)
+
 
 def main():
     p = argparse.ArgumentParser(description="Evaluate a trained checkpoint.")
@@ -246,6 +297,10 @@ def main():
                    help="Find per-class optimal threshold on the val set (reported alongside fixed threshold)")
     p.add_argument("--saveThresholds", type=str, default=None,
                    help="Write tuned per-class thresholds to this JSON file (requires --tuneThresholds)")
+    p.add_argument("--confusionFor",   type=str, default=None,
+                   help="For clips truly labeled this class, show mean predicted probability "
+                        "and top-1 prediction breakdown across all classes (which classes the "
+                        "model actually confuses this one with).")
     p.add_argument("--batchSize",      type=int, default=64)
     p.add_argument("--workers",        type=int, default=4)
     args = p.parse_args()
@@ -291,6 +346,7 @@ def main():
             workers=args.workers,
             device=device,
             backbone=backbone,
+            confusionFor=args.confusionFor,
         )
 
 
