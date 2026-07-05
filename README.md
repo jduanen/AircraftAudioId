@@ -501,6 +501,7 @@ python scripts/inspectDataset.py --recordingsDir ./recordings --datasetCsv ./dat
   * The image is built automatically by `trainDGX.sh` on first run and skipped on subsequent runs; pass `--build` to force a rebuild (only needed when `Dockerfile.training` changes)
   * PyTorch hub weights (e.g. ResNet-18) are cached on the DGX host at `~/.cache/torch` and mounted into the container, so they are not re-downloaded on each run
   * Checkpoints land in `./checkpoints/` on the DGX host
+  * `trainDGX.sh` archives any `.ckpt` files left over from a previous run into `checkpoints/archive/<timestamp>/` before starting — otherwise `evalBestDGX.sh` could pick an old (but architecturally still-compatible) checkpoint trained on different data over the current run's, with no error to signal it. `labelEncoder*.json` files are untouched.
   * The NVIDIA persistence daemon must be running or GPU containers will fail to start:
 ```bash
 sudo systemctl enable --now nvidia-persistenced
