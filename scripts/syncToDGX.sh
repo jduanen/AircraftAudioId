@@ -52,14 +52,13 @@ rsync ${OPTS} -avz --progress \
     --exclude='audioCapture/' \
     --exclude='cad/' \
     --exclude='DEPRECATED/' \
-    --exclude='data/`' \
+    --exclude='data/' \
     --exclude='datasets' \
     --exclude='dataset_*/' \
     --exclude='docs/' \
     --exclude='etc/' \
     --exclude='hold/' \
     --exclude='inspect/' \
-    --exclude='pyproject.toml' \
     --exclude='recordings' \
     --exclude='sim/' \
     --exclude='tests/' \
