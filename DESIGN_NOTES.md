@@ -509,7 +509,58 @@ configs_to_try = [
       6000 (3000 original + 3000 former regional_jet, no overlap since
       regional_jet had 0% multi-label co-occurrence), all other classes
       unchanged at 3000. Total clip count unchanged (24000).
-    * Retrain pending: expect narrowbody_jet's AP to rise substantially
-      given it's now the largest class by a 2x margin, and Macro-F1/mAP to
-      improve now that a structurally unresolvable class isn't dragging the
-      macro average down.
+    * Result (epoch=26/val_f1=0.553 checkpoint): mAP 0.588, Macro-F1 0.572
+      (7 classes). Isolating genuine gain from the mechanical effect of
+      averaging over 7 classes instead of 8: dropping regional_jet from the
+      OLD 8-class results (no merge) would already average to mAP ~0.574;
+      the merge gets to 0.588, a real **+0.014** beyond just removing the
+      broken class. That gain is concentrated exactly where predicted:
+      narrowbody_jet 0.401 -> 0.552 (+0.151, now the largest class at 6000
+      clips), helicopter 0.420 -> 0.485 (+0.065). piston_single/turboprop/
+      piston_twin held flat; widebody_jet -0.035 and business_jet -0.063
+      dipped modestly (within the run-to-run variance already observed
+      elsewhere this session — e.g. helicopter swung 0.42-0.51 across
+      identical reruns — not treated as a new problem unless it persists).
+      Per-class spread is now 0.485-0.799, much tighter than the 0.18-0.86
+      spread before the merge. **Closed** — this thread is resolved; the
+      merge decision is validated.
+
+* business_jet Investigation (2026-07-05)
+  - business_jet dipped -0.063 (0.592 -> 0.529) right after the regional_jet
+    merge — suspicious timing, checked with `--confusionFor business_jet`
+    rather than assumed to be variance.
+  - Confusion breakdown (n=679 true business_jet val clips): business_jet
+    wins its own top-1 guess 48.9% of the time (mean prob 0.623) — clearly
+    ahead of any single competitor. This is qualitatively different from
+    regional_jet's pattern (where the wrong class won outright): not a
+    single dominant systematic absorption, but a two-sided split —
+    narrowbody_jet (20.5% top-1) and turboprop (17.8% top-1).
+  - Investigated the narrowbody/widebody-direction share of the confusion
+    directly (not just inferred): scanned business_jet's raw `vehicle_types`
+    for large-airframe model designators and found `767-3S2F` (38 clips) and
+    `777-FS2` (84 clips) — 122/3000 (4.1%). Keyword rules explicitly list
+    "777"/"767" as widebody indicators, so these were reaching business_jet
+    via the FAA structural path (`typeAcft=5`, `typeEng=4/5`, `noSeats<20`),
+    not the keyword fallback — i.e. genuinely privately-registered/VIP-
+    converted 767s and 777s with a low registered seat count, sounding
+    exactly like any other 767/777 despite the seat-count-driven label.
+  - Fix: `faaDatabase.py::categoryForIcao24` now overrides business_jet to
+    the model-string keyword category when `_deriveCategory` says
+    business_jet but the model string matches widebody_jet/narrowbody_jet —
+    airframe/model family is a more reliable acoustic signal than a private
+    cabin's seat count. Narrowly scoped: only fires when the seat-count path
+    already said business_jet, verified it does not affect genuine bizjets
+    (e.g. `BD-100-1A10`/Challenger 300 unaffected). Existing dataset CSVs
+    relabeled in place: 122 clips business_jet -> widebody_jet (business_jet
+    3000 -> 2878, widebody_jet 3000 -> 3122).
+  - This explains and fixes the narrowbody/widebody-direction share of the
+    confusion (~4% contamination) but not the larger turboprop-direction
+    share (17.8% top-1) — that's likely genuine acoustic heterogeneity
+    within business_jet itself (light jets/VLJs like the Eclipse 500 at the
+    small end plausibly sound closer to a large turboprop than to a
+    midsize/large-cabin business jet). Not addressed here; business_jet's
+    own-class top-1 rate (48.9%) suggests this is a "hard but learnable"
+    class rather than a structurally broken one, so left as-is rather than
+    forcing another category split without stronger evidence.
+  - Retrain pending to confirm the fix recovers business_jet's dip and
+    whether widebody_jet absorbs the reclassified clips cleanly.

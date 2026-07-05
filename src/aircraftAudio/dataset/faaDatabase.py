@@ -83,6 +83,17 @@ class FaaDatabase:
 
         if info is not None:
             cat = _deriveCategory(info)
+            if cat == "business_jet":
+                # A privately-registered widebody/narrowbody airframe (e.g. a
+                # VIP-converted 767/777) can show NO-SEATS < 20 and derive to
+                # business_jet by the seat-count rule, but it sounds exactly
+                # like the airframe it is, not a typical bizjet. The model
+                # string is a more reliable acoustic signal than a custom
+                # cabin's seat count — prefer it when the two disagree.
+                modelCat = typeToCategory(info.get("model"))
+                if modelCat in ("widebody_jet", "narrowbody_jet"):
+                    return modelCat
+                return cat
             if cat != "unknown":
                 return cat
             cat = typeToCategory(info.get("model"))
