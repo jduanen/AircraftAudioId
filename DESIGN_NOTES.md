@@ -562,5 +562,67 @@ configs_to_try = [
     own-class top-1 rate (48.9%) suggests this is a "hard but learnable"
     class rather than a structurally broken one, so left as-is rather than
     forcing another category split without stronger evidence.
-  - Retrain pending to confirm the fix recovers business_jet's dip and
-    whether widebody_jet absorbs the reclassified clips cleanly.
+  - Result (2 runs on identical post-fix data, epoch=37/val_f1=0.555 and
+    epoch=40/val_f1=0.558): business_jet 0.529 -> ~0.557 avg (real
+    improvement, confirmed reproducible), but widebody_jet 0.647 -> ~0.586
+    avg (real regression, tightly reproducible: 0.587 and 0.584 across the
+    two runs — much tighter than this pipeline's normal ~0.03-0.09 run-to-run
+    noise, so not attributable to variance). Net mAP -0.012 (0.588 -> 0.576,
+    identical both runs). The 122 reclassified VIP-jet clips are correct
+    labels but atypical training examples (privately-flown 767/777s likely
+    have different altitude/speed/distance profiles than commercial
+    widebody traffic), diluting an otherwise more homogeneous widebody_jet
+    class. Kept the fix (correct ground truth over a small metric hit) and
+    moved to testing the dilution theory directly rather than reverting.
+
+* widebody_jet Dilution Test (2026-07-05)
+  - Hypothesis: the atypical VIP-jet minority (122/3122, ~4%) hurt
+    widebody_jet because it was a large fraction of a still-small class;
+    adding more typical widebody_jet clips should dilute it back down and
+    let the class recover.
+  - Implementation: rather than re-running the full 8-class
+    extraction+deep-analysis pipeline, ran `_runDeepAnalysis`/
+    `_compositeScore` (from `evalClipQuality.py`) directly on just
+    widebody_jet's ~44K-clip raw pool, selected the new top 6000 (doubling
+    it, matching narrowbody_jet's earlier doubling), and merged into the
+    existing dataset (swap old widebody_jet rows for the new selection,
+    copy new WAVs, precompute their `.spec.npy` with `--skipExisting`).
+    widebody_jet: 3122 -> 6000. Total dataset: 24000 -> 26878.
+  - Result: **dilution theory confirmed for widebody_jet** — AP recovered
+    past even the pre-business_jet-fix peak, to a new best (0.770, then
+    0.807 -> 0.828 across repeated runs on this data, i.e. consistently
+    the strongest class after piston_twin).
+  - But narrowbody_jet regressed (~0.536 avg before -> ~0.435 avg across two
+    widebody-boost runs, with high run-to-run variance: 0.388 and 0.482 on
+    identical data — wider than this pipeline's usual noise band).
+    Positive-rate shift explains the mechanism: widebody_jet went from
+    14.5% -> 25.4% of the dataset, becoming the single largest class
+    (bigger than narrowbody_jet's 19.5%) — the same "bigger adjacent class
+    wins the shared boundary" dynamic seen with regional_jet/narrowbody_jet,
+    just one category up the seat-count ladder (narrowbody_jet 20-220 seats
+    vs widebody_jet >220).
+  - **Checked via `--confusionFor narrowbody_jet` before concluding a merge
+    was warranted** (properly converged checkpoint, epoch=10/val_f1=0.544):
+    narrowbody_jet narrowly WINS its own top-1 (39.2% vs widebody_jet's
+    37.0%, mean prob 0.617 vs 0.607) — qualitatively different from the
+    regional_jet case, where narrowbody_jet had decisively beaten regional_jet
+    on both metrics. This is a genuinely hard, close boundary (largest
+    narrowbody variants like a 737 MAX 10/A321 aren't acoustically far from
+    the smallest widebodies like a 767), but the model hasn't given up on
+    separating them — **no merge recommended** here.
+  - Plateau/grokking check (prompted by "does training bump after a long
+    plateau" question): ran `--maxEpochs 150 --patience 60` on this dataset
+    to rule out a hidden late-training improvement. Best checkpoint landed
+    at **epoch 10** — earlier than the established 26-42 range, not later.
+    val_loss was climbing while train_loss kept falling by epoch 70 (plain
+    overfitting). Confirms this setup converges early; no evidence of
+    delayed generalization ("grokking") at this data scale.
+  - **BANKED as the production checkpoint (2026-07-05).** mAP 0.591 —
+    best of the entire investigation (from 0.405 at the start: dual-stem
+    architecture, 3x data, regional_jet merge, business_jet mislabel fix,
+    widebody_jet dilution, in that order). Full progression:
+    0.405 -> 0.441 -> 0.524 -> 0.588 -> 0.576 -> 0.591.
+  - Remaining weak classes, not yet individually investigated the way
+    regional_jet/business_jet/widebody_jet were: turboprop (~0.47-0.50) and
+    helicopter (~0.43-0.49). Natural next targets if continuing this line
+    of work.
