@@ -1,8 +1,11 @@
 # Audio Classification of Aircraft
 
-**WIP**
+This is a research project to classify aircraft from audio recordings of flyovers, using synchronized ADS-B telemetry as ground truth. The goals of this project, in progression order, are: (1) classify aircraft type — propulsion (jet/turbine/piston), engine count, wing type (rotary/fixed); (2) classify direction of travel for single-aircraft clips; (3) estimate speed from audio; (4) handle clips with multiple simultaneous aircraft; (5) estimate additional attributes (distance, altitude, specific engine/airframe model).
 
-See [docs/workflow.html](https://jduanen.github.io/AircraftAudioId/workflow.html) for the full interactive workflow diagram.
+The pipeline spans three machines: a Raspberry Pi Zero 2W that streams microphone audio over TCP while an ADS-B receiver (Pi 4B running `readsb`) supplies aircraft telemetry; an Ubuntu server that fuses the two streams (using `record.py`), triggers recordings on detected flyovers, and builds a labeled clip dataset (`buildDataset.py`); a DGX Spark trains a ResNet-18-based multi-task model (vehicle type, direction, speed) on precomputed mel-spectrograms via Docker (using the `trainDGX.sh` and `evalDGX.sh` scripts).
+
+See [docs/workflow.html](https://jduanen.github.io/AircraftAudioId/workflow.html) for the full workflow diagram.
+Below is a simplified schematic of the system.
 
 ```mermaid
 flowchart LR
