@@ -626,3 +626,84 @@ configs_to_try = [
     regional_jet/business_jet/widebody_jet were: turboprop (~0.47-0.50) and
     helicopter (~0.43-0.49). Natural next targets if continuing this line
     of work.
+
+* Incremental-Growth Regression via addNewRecordings.py (2026-07-21)
+  - Context: since the 2026-07-05 banked checkpoint (mAP 0.591, 26,878 clips,
+    sized by `buildQualityDatasetFromRecordings.py --bestN`: 3000/class except
+    narrowbody_jet/widebody_jet at 6000 post-merge/dilution),
+    `scripts/addNewRecordings.py` has been run repeatedly to ingest new
+    recordings — it has no per-category cap, admitting every new clip that
+    clears the current per-category quality bar (fast/RMS mode). Curated
+    dataset grew 26,878 -> 87,114 clips (70,147 train + 16,967 val) by the
+    time of the next full eval, run with `--freezeBackbone --weightDecay 0.05
+    --maxEpochs 150 --patience 60`.
+  - Result: mAP fell 0.591 -> 0.460 — a broad regression, not a single-class
+    issue. Per-class AP: piston_single 0.780 (only class that held up/
+    improved), widebody_jet 0.598 (down from ~0.828 post-dilution-test),
+    narrowbody_jet 0.499, piston_twin 0.446 (down from ~0.81-0.85, previously
+    the best class of the whole investigation), business_jet 0.313 (down from
+    ~0.557), turboprop 0.313 (down from ~0.47-0.50), helicopter 0.274 (down
+    from ~0.43-0.49).
+  - Two contributing mechanisms found in the data (diagnosis, not yet
+    confirmed via `--confusionFor` — see next step below):
+    1. **Severe growth imbalance.** Per-category raw-pool size in
+       `dataset.csv` varies by >50x (piston_single 210k vs piston_twin 4.1k),
+       so an uncapped "admit anything at least as good as the current worst"
+       gate lets the biggest classes grow fastest every run. Counts before ->
+       after the 2026-07-06 cutoff: piston_single 6835 -> 31,805 (+365%),
+       business_jet 3145 -> 4886 (+55%), helicopter 3039 -> 4399 (+45%),
+       piston_twin 3226 -> 3750 (+16%, essentially static). piston_single is
+       now 37.3% of the val positive rate, >8x piston_twin's 5.3% — the same
+       "bigger class wins the shared acoustic boundary" dynamic already
+       documented above for regional_jet/narrowbody_jet and
+       narrowbody_jet/widebody_jet, plausibly recurring here between the two
+       piston classes (same engine family, differing mainly by engine count).
+    2. **Quality drift toward the floor.** Comparing average `clipRms` of
+       clips added before vs. after 2026-07-06 (proxy for how deep into each
+       category's quality-ranked pool the newer clips sit): business_jet
+       0.0068 -> 0.0043, helicopter 0.0075 -> 0.0052, turboprop
+       0.0079 -> 0.0049, widebody_jet 0.0099 -> 0.0037, narrowbody_jet
+       0.0090 -> 0.0058, piston_single 0.0113 -> 0.0083 — all substantially
+       lower, consistent with newly-admitted clips sitting closer to the
+       quality floor than the hand-curated best-N originally did.
+       **piston_twin is the exception**: avgRms rose 0.0034 -> 0.0054 after
+       the cutoff, so its regression is not explained by quality drift —
+       points at mechanism (1) instead for this class specifically.
+  - **Update: mechanism (1) tested via `--confusionFor piston_twin` and
+    ruled out for this class.** piston_twin still solidly wins its own top-1
+    (42.1% of 895 true clips, mean prob 0.579) — the next-highest confusor
+    (piston_single) only takes 12.7%, and the rest spreads nearly evenly
+    across every other class (turboprop 11.4%, narrowbody_jet 12.5%,
+    widebody_jet 10.4%, business_jet 6.6%, helicopter 4.2%). This is a
+    diffuse pattern, qualitatively unlike regional_jet's single-dominant-
+    absorber case — closer to the business_jet "hard but learnable" pattern
+    above. piston_single is not specifically absorbing piston_twin.
+  - **Update: mechanism (2) also tested directly and ruled out for
+    piston_twin.** Ran the full 7-metric `_runDeepAnalysis`/`_compositeScore`
+    pipeline (not just RMS) on a 150-clip random sample each side of the
+    2026-07-06 cutoff: composite score 0.5403 (before) vs 0.5463 (after) —
+    flat to fractionally better, not worse. So piston_twin's own newly-added
+    clips are not lower quality by any of the 7 metrics tracked.
+  - **Net: piston_twin's AP collapse (~0.81-0.85 -> 0.446-0.482) is not
+    explained by its own data quality or by a single absorbing class.**
+    Remaining candidates, not yet tested: (a) a genuinely global/systemic
+    effect of the 3.2x dataset growth and resulting imbalance on training
+    dynamics (e.g. pos_weight/decision-threshold calibration shifting for
+    every class at once, not a pairwise boundary fight — consistent with
+    every class except piston_single regressing, not just piston_twin);
+    (b) the current best checkpoint converged much earlier (epoch 11,
+    val_f1 0.461) than the banked run (epoch 26-42 range across earlier
+    stages) — possibly reflects the frozen-backbone MLP head hitting a
+    harder optimization landscape sooner with this much more data/imbalance,
+    rather than a data-quality problem per se. The most direct causal test
+    of (a): rebuild the curated set with per-category caps close to the
+    banked composition (e.g. cap piston_single well below its current
+    31,805) and retrain, to see if performance recovers toward 0.591 —
+    isolates "did uncapped growth cause this" without needing to identify
+    the exact mechanism first.
+  - Implication for `scripts/addNewRecordings.py`: as currently designed (no
+    per-category cap), every future run will keep widening this imbalance,
+    since piston_single's raw pool so vastly exceeds the rare classes'.
+    Before the next incremental run, consider a per-category ceiling
+    (mirroring `--maxPerClass` in `buildDataset.py`) and/or retraining with
+    `--balanceClasses`.
