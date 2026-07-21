@@ -218,9 +218,10 @@ python scripts/buildQualityDatasetFromRecordings.py \
 * **`scripts/addNewRecordings.py`**: incrementally adds newly-recorded clips to an existing dataset, gated by per-category quality
   - finds recordings not yet in `dataset.csv` whose session has been confirmed complete by a `session_<timestamp>.json` summary (written by `recorder.py` on SIGUSR1 or normal shutdown — recordings newer than the latest session summary are left for the next run, since they may still be mid-flight)
   - extracts clips from those recordings, then appends to `train.csv`/`val.csv` only the clips that are at least as good as the worst clip already kept for that category — the same bar `buildQualityDataset*.py` used when the dataset was built; a clip qualifies if it meets the bar for *any* of its categories, and a brand-new category with no existing clips has no bar
+  - **per-category cap** (`--maxPerClass`): raw-pool sizes vary by 50x+ between categories, so an uncapped "add anything that qualifies" rule lets the biggest categories grow much faster than the rest across repeated runs, silently skewing the dataset (see `DESIGN_NOTES.md`, "Incremental-Growth Regression," for the incident this fixes). Once a category is at its cap, no more clips are added for it regardless of quality; below the cap, qualifying candidates are added best-score-first. Defaults to the largest per-category count already in `train.csv`/`val.csv`, so a category can never grow past today's largest class unless the cap is raised explicitly
   - null/background clips are always kept, matching `buildDataset.py` convention
   - **Fast mode** (default): compares RMS dBFS — no extra audio reads beyond what extraction already does
-  - **Deep mode** (`--deepAnalysis`): compares composite quality score across all 7 metrics — re-reads every currently-kept clip once (to establish the threshold) plus every newly extracted clip
+  - **Deep mode** (`--deepAnalysis`): compares composite quality score across all 7 metrics — re-reads every currently-kept clip once (to establish the threshold) plus every newly extracted clip; parallelized across `os.cpu_count()` worker processes
   - e.g.,
 ```bash
 python scripts/addNewRecordings.py \
@@ -234,6 +235,7 @@ python scripts/addNewRecordings.py \
     * `--datasetDir <path>` (required): existing dataset directory containing `dataset.csv`, `train.csv`, `val.csv`
     * `--faaDatabaseDir <path>`: FAA ReleasableAircraft directory — strongly recommended for correct category labels
     * `--deepAnalysis`: rank by composite quality score instead of RMS
+    * `--maxPerClass <int>`: per-category cap (default: largest current category count)
     * `--clipSecs <float>` (default: 5.0), `--trainFrac <float>` (default: 0.8), `--maxDistanceKm <float>`, `--dropUnknown`, `--autoCorrectClock`, `--workers <int>` (default: 1) — same as `buildQualityDatasetFromRecordings.py`
 
 * **`scripts/evalClipQuality.py`**: evaluates audio clip quality per class using fast CSV-based metrics and optional deep per-file analysis

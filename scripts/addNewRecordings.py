@@ -16,6 +16,18 @@ qualifies if it meets the bar for *any* of its categories; a brand-new
 category with no clips yet in the dataset has no bar and any clip qualifies.
 Null/background clips are always kept, matching buildDataset.py convention.
 
+Per-category cap (--maxPerClass): raw-pool sizes vary enormously between
+categories (e.g. piston_single vs piston_twin can differ by 50x), so an
+uncapped "add anything that qualifies" rule lets the biggest categories grow
+much faster than the rest across repeated runs, silently skewing the dataset
+over time (see DESIGN_NOTES.md, "Incremental-Growth Regression"). Once a
+category is at its cap, no more clips are added for it regardless of quality;
+below the cap, qualifying candidates are added best-score-first until the cap
+is reached. Defaults to the largest per-category count already in
+train.csv/val.csv, so by default a category can never grow past today's
+largest class — pass --maxPerClass explicitly to raise that ceiling (e.g.
+right after a fresh buildQualityDataset*.py rebuild with a higher --bestN).
+
 Ranking modes:
   Fast (default) — compares RMS dBFS. No extra audio reads: the new clips'
     RMS is computed during extraction, and the currently-kept clips' RMS is
@@ -137,6 +149,16 @@ def _perCategoryThresholds(keptDf: pd.DataFrame, deep: bool) -> dict[str, float]
     return thresholds
 
 
+def _perCategoryCounts(keptDf: pd.DataFrame) -> dict[str, int]:
+    """Current number of currently-kept clips per category (multi-label: counts once per category)."""
+    aircraftDf = keptDf[~keptDf.apply(_isNull, axis=1)]
+    counts: dict[str, int] = {}
+    for _, row in aircraftDf.iterrows():
+        for cat in _categoriesOf(row):
+            counts[cat] = counts.get(cat, 0) + 1
+    return counts
+
+
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Add newly-recorded clips to an existing dataset, gated by per-category quality.",
@@ -172,6 +194,12 @@ def main() -> None:
                     help="Estimate per-recording clock skew from state timestamps.")
     p.add_argument("--workers", type=int, default=1,
                     help="Parallel worker processes for clip extraction (default: 1).")
+    p.add_argument("--maxPerClass", type=int, default=None,
+                    help="Cap on kept clips per category. Once a category is at this cap, no "
+                         "more clips are added for it regardless of quality. Default: the "
+                         "largest per-category count already in train.csv/val.csv, so a "
+                         "category can never grow past today's largest class unless raised "
+                         "explicitly.")
     args = p.parse_args()
 
     if not (args.datasetDir / "train.csv").exists() or not (args.datasetDir / "val.csv").exists():
@@ -224,6 +252,10 @@ def main() -> None:
     keptDf = pd.concat([trainDf, valDf], ignore_index=True)
 
     thresholds = _perCategoryThresholds(keptDf, deep=args.deepAnalysis)
+    currentCounts = _perCategoryCounts(keptDf)
+    maxPerClass = args.maxPerClass or (max(currentCounts.values()) if currentCounts else 0)
+    print(f"Per-category cap: {maxPerClass}"
+          + (" (auto: largest current category)" if args.maxPerClass is None else ""))
     rankMode = "composite score" if args.deepAnalysis else "RMS dBFS"
 
     nullRows = candidatesDf[candidatesDf["flightPhase"] == "null"]
@@ -240,9 +272,8 @@ def main() -> None:
         scoreOf = lambda row: _rmsDb(row["clipRms"])
 
     availCounts: dict[str, int] = {}
-    keptCounts: dict[str, int] = {}
-    keepMask = []
-    for _, row in aircraftRows.iterrows():
+    qualified: list[tuple[float, list[str], int]] = []  # (score, cats, row index)
+    for i, row in aircraftRows.iterrows():
         cats = _categoriesOf(row)
         for cat in cats:
             availCounts[cat] = availCounts.get(cat, 0) + 1
@@ -250,20 +281,34 @@ def main() -> None:
         qualifies = score is not None and bool(cats) and any(
             score >= thresholds.get(cat, float("-inf")) for cat in cats
         )
-        keepMask.append(qualifies)
         if qualifies:
-            for cat in cats:
-                keptCounts[cat] = keptCounts.get(cat, 0) + 1
+            qualified.append((score, cats, i))
 
-    keptAircraftDf = aircraftRows[pd.Series(keepMask, index=aircraftRows.index)]
+    # Cap enforcement: best-scoring qualifying clips first, skip once every one
+    # of a clip's categories is already at its cap.
+    remainingBudget = {
+        cat: maxPerClass - currentCounts.get(cat, 0) for cat in set(thresholds) | set(availCounts)
+    }
+    keptCounts: dict[str, int] = {}
+    keepIndices = []
+    for score, cats, i in sorted(qualified, key=lambda t: t[0], reverse=True):
+        if not any(remainingBudget.get(cat, maxPerClass) > 0 for cat in cats):
+            continue
+        keepIndices.append(i)
+        for cat in cats:
+            remainingBudget[cat] = remainingBudget.get(cat, maxPerClass) - 1
+            keptCounts[cat] = keptCounts.get(cat, 0) + 1
 
-    print(f"\n  New clips passing the per-category quality bar (ranked by {rankMode}):")
-    print(f"  {'Category':<22}  {'Threshold':>10}  {'Candidates':>10}  {'Kept':>6}")
-    print("  " + "─" * 56)
+    keptAircraftDf = aircraftRows.loc[keepIndices]
+
+    print(f"\n  New clips passing the per-category quality bar and cap (ranked by {rankMode}):")
+    print(f"  {'Category':<22}  {'Threshold':>10}  {'Candidates':>10}  {'CurCount':>8}  {'Kept':>6}")
+    print("  " + "─" * 64)
     for cat in sorted(set(availCounts) | set(thresholds)):
         thr = thresholds.get(cat)
         thrStr = f"{thr:.3f}" if thr is not None else "(new)"
-        print(f"  {cat:<22}  {thrStr:>10}  {availCounts.get(cat, 0):>10}  {keptCounts.get(cat, 0):>6}")
+        print(f"  {cat:<22}  {thrStr:>10}  {availCounts.get(cat, 0):>10}  "
+              f"{currentCounts.get(cat, 0):>8}  {keptCounts.get(cat, 0):>6}")
 
     addedDf = pd.concat([keptAircraftDf, nullRows], ignore_index=True)
     print(f"\nAdding {len(addedDf)} clip(s) to the dataset "
