@@ -707,3 +707,43 @@ configs_to_try = [
     Before the next incremental run, consider a per-category ceiling
     (mirroring `--maxPerClass` in `buildDataset.py`) and/or retraining with
     `--balanceClasses`.
+  - **Fix applied and confirmed (2026-07-21).** Ran the direct causal test
+    from above: `buildQualityDataset.py --datasetCsv dataset.csv --bestN 6000
+    --deepAnalysis` against the full grown raw pool (497,250 clips),
+    re-parallelized (`_runDeepAnalysis` gained a `multiprocessing.Pool`,
+    verified output-identical to the old single-threaded path on a 300-clip
+    sample first — cut a ~13.5h single-threaded run to ~15min on 16 cores).
+    Result: 6000/category except piston_twin (4136, its full pool),
+    40,136 clips total (32,047 train / 8,089 val), down from the uncapped
+    87,114 but far more balanced (positive rate spread 10.9%-16.4%, vs.
+    4.3%-37.3% before). Retrained with identical hyperparameters
+    (`--freezeBackbone --weightDecay 0.05 --maxEpochs 150 --patience 60`).
+    **mAP 0.460 -> 0.582, Macro-F1 -> 0.580** (epoch=27/val_f1=0.560
+    checkpoint) — recovers to within 0.009 of the 0.591 banked run.
+    Confirms uncapped incremental growth, not architecture or a data-quality
+    regression, caused the collapse. Per-class: piston_twin 0.446 -> 0.637,
+    helicopter 0.274 -> 0.642, business_jet 0.313 -> 0.619, turboprop
+    0.313 -> 0.526 — all recovered past their pre-regression baselines.
+    piston_single 0.780 -> 0.613 (expected: no longer overrepresented at
+    31,805 clips). One class did not recover — see below.
+  - **New thread: narrowbody_jet regressed further under the fix (0.499 ->
+    0.354), now the weakest class**, despite an unchanged 6000-clip cap
+    matching the banked run (which scored 0.552 at the same count).
+    `--confusionFor narrowbody_jet` shows it is not a single-absorber case —
+    it wins its own top-1 solidly (50.3% of 1166 true clips, mean prob
+    0.634), well ahead of its two confusors (piston_single 21.8%, widebody_jet
+    15.9%). widebody_jet's share fits the known boundary pattern; piston_single's
+    21.8% has no obvious acoustic-adjacency explanation and is itself odd.
+    Checked and ruled out: multi-aircraft contamination (isSingle 100% single
+    for all 6000 clips) and distance/altitude skew (mean 2.68km / 4516ft,
+    unremarkable). Composition note: 56 distinct `vehicle_types` in the
+    selection; the two largest are `ERJ 170-200 LR` (510) and
+    `ERJ 170-200 LL` (265) — combined 775/6000 (12.9%), bigger than any
+    single 737/A320 variant. These are the former regional_jet aircraft
+    absorbed by the 2026-07-04 merge, so the class still carries that
+    heterogeneity, just expressed as within-class variance now rather than
+    cross-class confusion. Not confirmed as the cause of the piston_single
+    confusion specifically — would need per-clip prediction data (only
+    available during a DGX eval run, not reconstructable locally) to test
+    whether the piston_single-confused clips skew toward the E-Jet subset.
+    Left open rather than acted on.
