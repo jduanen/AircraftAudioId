@@ -89,9 +89,11 @@ score rather than RMS alone.  Each metric is normalised to [0, 1] (1 = best):
 Without --deepAnalysis, ranking falls back to RMS only.
 """
 
+import os
 import sys
 import json
 import argparse
+import multiprocessing
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -287,40 +289,52 @@ def _deepMetrics(wavPath: str, sampleRate: int = 44100) -> dict:
     }
 
 
-def _runDeepAnalysis(df: pd.DataFrame) -> tuple[list[dict], int]:
+def _deepMetricsForRow(row: dict) -> dict | None:
+    """Worker: compute the metric dict for one row, or None if unreadable."""
+    wavPath = Path(row["filepath"])
+    if not wavPath.exists():
+        return None
+    try:
+        metrics = _deepMetrics(str(wavPath))
+    except Exception:
+        return None
+    return {
+        "filepath":    str(wavPath),
+        "rmsDb":       _rmsDb(row["clipRms"]),
+        "distanceKm":  float(row.get("distanceKm", float("nan"))),
+        "altitudeFt":  float(row.get("altitudeFt", float("nan"))),
+        "flightPhase": str(row.get("flightPhase", "")),
+        **metrics,
+    }
+
+
+def _runDeepAnalysis(df: pd.DataFrame, workers: int | None = None) -> tuple[list[dict], int]:
     """
-    Run deep metric computation for every row in df.
+    Run deep metric computation for every row in df, in parallel.
 
     Prints progress every 500 clips.  Missing or unreadable files are skipped
     and counted.
 
+    Args:
+        workers: Number of worker processes (default: os.cpu_count()).
+
     Returns:
         (results, nMissing) where results is a list of per-clip metric dicts.
     """
+    rows = [row.to_dict() for _, row in df.iterrows()]
+    nTotal = len(rows)
+    workers = workers or os.cpu_count() or 1
+
     results = []
     nMissing = 0
-    nTotal = len(df)
-
-    for i, (_, row) in enumerate(df.iterrows()):
-        if i > 0 and i % 500 == 0:
-            print(f"  ... {i}/{nTotal} clips processed")
-        wavPath = Path(row["filepath"])
-        if not wavPath.exists():
-            nMissing += 1
-            continue
-        try:
-            metrics = _deepMetrics(str(wavPath))
-        except Exception:
-            nMissing += 1
-            continue
-        results.append({
-            "filepath":    str(wavPath),
-            "rmsDb":       _rmsDb(row["clipRms"]),
-            "distanceKm":  float(row.get("distanceKm", float("nan"))),
-            "altitudeFt":  float(row.get("altitudeFt", float("nan"))),
-            "flightPhase": str(row.get("flightPhase", "")),
-            **metrics,
-        })
+    with multiprocessing.Pool(workers) as pool:
+        for i, res in enumerate(pool.imap(_deepMetricsForRow, rows, chunksize=32)):
+            if i > 0 and i % 500 == 0:
+                print(f"  ... {i}/{nTotal} clips processed")
+            if res is None:
+                nMissing += 1
+            else:
+                results.append(res)
 
     return results, nMissing
 
