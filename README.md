@@ -585,6 +585,13 @@ bash scripts/evalBestDGX.sh \
     --valCsv dataset/val.csv --useCategories \
     --confusionFor turboprop
 ```
+  - `--confusionSplit <substring>` (requires `--confusionFor`) further splits that breakdown by whether each clip's `vehicle_types` matches a case-insensitive substring — e.g. to check whether a specific subtype within a merged category confuses differently than the rest:
+```bash
+bash scripts/evalBestDGX.sh \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv --useCategories \
+    --confusionFor narrowbody_jet --confusionSplit ERJ
+```
 
 11) Inference
   - ?

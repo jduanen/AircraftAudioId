@@ -115,17 +115,51 @@ def _inferWav(wavPath: str, model: VehicleSoundClassifier, labelEncoder: dict[st
         print(f"  {label:<23}  {probs[p]:6.3f}  {active:>6}")
 
 
+def _printConfusionTable(
+    subProbs: np.ndarray,
+    indexToLabel: dict[int, str],
+    targetIdx: int,
+    heading: str,
+) -> None:
+    n = subProbs.shape[0]
+    meanProb = subProbs.mean(axis=0)
+    top1 = subProbs.argmax(axis=1)
+    nClasses = subProbs.shape[1]
+    top1Counts = np.bincount(top1, minlength=nClasses)
+
+    print(f"\n{heading}")
+    print(f"  {'Class':<22}  {'Mean Prob':>9}  {'Top-1 Count':>11}  {'Top-1 %':>8}")
+    print("  " + "─" * 56)
+    order = sorted(range(nClasses), key=lambda c: -meanProb[c])
+    for c in order:
+        label = indexToLabel.get(c, f"class_{c}")
+        marker = " *" if c == targetIdx else "  "
+        print(
+            f"  {label:<22}{marker}  {meanProb[c]:9.3f}  {top1Counts[c]:11d}  "
+            f"{100*top1Counts[c]/n:7.1f}%"
+        )
+    print("  " + "─" * 56)
+
+
 def _confusionBreakdown(
     allProbs: np.ndarray,
     allLabels: np.ndarray,
     indexToLabel: dict[int, str],
     targetClass: str,
+    vehicleTypes: list[str] | None = None,
+    confusionSplit: str | None = None,
 ) -> None:
     """
     For clips whose ground truth includes targetClass, show what the model
     actually predicts: mean probability assigned to every class, and how
     often each class wins the argmax (i.e. what the model "thinks" the
     clip is, treating the top-1 prediction as its best guess).
+
+    If confusionSplit is given (a case-insensitive substring to match against
+    each clip's vehicle_types), the breakdown is additionally split into
+    clips whose vehicle_types match it vs. clips that don't — e.g. to check
+    whether a specific aircraft subtype within a merged category (ERJ/E-Jets
+    within narrowbody_jet) is driving the confusion differently than the rest.
     """
     labelToIndex = {v: k for k, v in indexToLabel.items()}
     if targetClass not in labelToIndex:
@@ -140,26 +174,26 @@ def _confusionBreakdown(
         return
 
     subProbs = allProbs[mask]
-    meanProb = subProbs.mean(axis=0)
-    top1 = subProbs.argmax(axis=1)
-    nClasses = allProbs.shape[1]
-    top1Counts = np.bincount(top1, minlength=nClasses)
-
     print(f"\n{'═'*60}")
     print(f"  CONFUSION BREAKDOWN — true class: {targetClass}  (n={nTarget})")
     print(f"{'═'*60}")
-    print(f"  {'Class':<22}  {'Mean Prob':>9}  {'Top-1 Count':>11}  {'Top-1 %':>8}")
-    print("  " + "─" * 56)
-    order = sorted(range(nClasses), key=lambda c: -meanProb[c])
-    for c in order:
-        label = indexToLabel.get(c, f"class_{c}")
-        marker = " *" if c == targetIdx else "  "
-        print(
-            f"  {label:<22}{marker}  {meanProb[c]:9.3f}  {top1Counts[c]:11d}  "
-            f"{100*top1Counts[c]/nTarget:7.1f}%"
-        )
-    print("  " + "─" * 56)
+    _printConfusionTable(subProbs, indexToLabel, targetIdx, "  Overall:")
     print(f"  (* = the true class itself)")
+
+    if confusionSplit and vehicleTypes is not None:
+        maskedVehicleTypes = [vehicleTypes[i] for i in np.where(mask)[0]]
+        matchFlags = np.array([
+            any(confusionSplit.lower() in v.lower() for v in json.loads(vt))
+            for vt in maskedVehicleTypes
+        ])
+        for label, flags in [
+            (f"vehicle_types contains '{confusionSplit}'", matchFlags),
+            (f"vehicle_types NOT containing '{confusionSplit}'", ~matchFlags),
+        ]:
+            n = int(flags.sum())
+            if n == 0:
+                continue
+            _printConfusionTable(subProbs[flags], indexToLabel, targetIdx, f"  {label} (n={n}):")
 
 
 def _evalCsv(
@@ -175,6 +209,7 @@ def _evalCsv(
     device: torch.device,
     backbone: str = "resnet18",
     confusionFor: str | None = None,
+    confusionSplit: str | None = None,
 ) -> None:
     from sklearn.metrics import (
         precision_recall_fscore_support,
@@ -277,7 +312,11 @@ def _evalCsv(
         print(f"    {label:<25}  {positiveRates[c]*100:5.1f}%")
 
     if confusionFor:
-        _confusionBreakdown(allProbs, allLabels, indexToLabel, confusionFor)
+        _confusionBreakdown(
+            allProbs, allLabels, indexToLabel, confusionFor,
+            vehicleTypes=valDf["vehicle_types"].tolist(),
+            confusionSplit=confusionSplit,
+        )
 
 
 def main():
@@ -301,6 +340,12 @@ def main():
                    help="For clips truly labeled this class, show mean predicted probability "
                         "and top-1 prediction breakdown across all classes (which classes the "
                         "model actually confuses this one with).")
+    p.add_argument("--confusionSplit", type=str, default=None,
+                   help="Requires --confusionFor. Case-insensitive substring to match against "
+                        "each clip's vehicle_types; splits the confusion breakdown into clips "
+                        "that match vs. don't, e.g. --confusionFor narrowbody_jet "
+                        "--confusionSplit ERJ to check whether the former regional_jet subtype "
+                        "confuses differently than mainline narrowbody clips.")
     p.add_argument("--batchSize",      type=int, default=64)
     p.add_argument("--workers",        type=int, default=4)
     args = p.parse_args()
@@ -347,6 +392,7 @@ def main():
             device=device,
             backbone=backbone,
             confusionFor=args.confusionFor,
+            confusionSplit=args.confusionSplit,
         )
 
 
