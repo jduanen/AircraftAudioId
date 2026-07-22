@@ -27,6 +27,7 @@ import sys
 import json
 import argparse
 import numpy as np
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -122,6 +123,7 @@ def _printConfusionTable(
     heading: str,
     distanceKm: np.ndarray | None = None,
     altitudeFt: np.ndarray | None = None,
+    velocityKts: np.ndarray | None = None,
 ) -> None:
     n = subProbs.shape[0]
     meanProb = subProbs.mean(axis=0)
@@ -129,13 +131,17 @@ def _printConfusionTable(
     nClasses = subProbs.shape[1]
     top1Counts = np.bincount(top1, minlength=nClasses)
     hasMeta = distanceKm is not None and altitudeFt is not None
+    hasVelocity = velocityKts is not None
 
     print(f"\n{heading}")
     hdr = f"  {'Class':<22}  {'Mean Prob':>9}  {'Top-1 Count':>11}  {'Top-1 %':>8}"
     if hasMeta:
         hdr += f"  {'MeanDistKm':>10}  {'MeanAltFt':>10}"
+    if hasVelocity:
+        hdr += f"  {'MeanKts':>8}"
     print(hdr)
-    print("  " + "─" * (56 + (24 if hasMeta else 0)))
+    ruleLen = 56 + (24 if hasMeta else 0) + (10 if hasVelocity else 0)
+    print("  " + "─" * ruleLen)
     order = sorted(range(nClasses), key=lambda c: -meanProb[c])
     for c in order:
         label = indexToLabel.get(c, f"class_{c}")
@@ -144,17 +150,53 @@ def _printConfusionTable(
             f"  {label:<22}{marker}  {meanProb[c]:9.3f}  {top1Counts[c]:11d}  "
             f"{100*top1Counts[c]/n:7.1f}%"
         )
+        groupMask = top1 == c
+        hasGroup = groupMask.sum() > 0
         if hasMeta:
-            groupMask = top1 == c
-            if groupMask.sum() > 0:
+            if hasGroup:
                 row += (
                     f"  {distanceKm[groupMask].mean():10.2f}"
                     f"  {altitudeFt[groupMask].mean():10.0f}"
                 )
             else:
                 row += f"  {'—':>10}  {'—':>10}"
+        if hasVelocity:
+            row += f"  {velocityKts[groupMask].mean():8.0f}" if hasGroup else f"  {'—':>8}"
         print(row)
-    print("  " + "─" * (56 + (24 if hasMeta else 0)))
+    print("  " + "─" * ruleLen)
+
+
+def _printTopVehicleTypesByGroup(
+    subProbs: np.ndarray,
+    vehicleTypes: list[str],
+    indexToLabel: dict[int, str],
+    targetIdx: int,
+    topKGroups: int = 3,
+    topKTypes: int = 5,
+) -> None:
+    """
+    For the top-1 confusor classes (excluding the true class itself), show
+    the most common vehicle_types among the clips assigned to that group —
+    e.g. to check whether a specific airframe/model is driving a particular
+    confusion rather than the class as a whole.
+    """
+    top1 = subProbs.argmax(axis=1)
+    nClasses = subProbs.shape[1]
+    top1Counts = np.bincount(top1, minlength=nClasses)
+    confusorOrder = [c for c in np.argsort(-top1Counts) if c != targetIdx][:topKGroups]
+
+    for c in confusorOrder:
+        if top1Counts[c] == 0:
+            continue
+        label = indexToLabel.get(c, f"class_{c}")
+        groupTypes = [vehicleTypes[i] for i in np.where(top1 == c)[0]]
+        counter = Counter()
+        for vt in groupTypes:
+            for t in json.loads(vt):
+                counter[t] += 1
+        print(f"\n  Top vehicle_types predicted '{label}' (n={len(groupTypes)}):")
+        for t, cnt in counter.most_common(topKTypes):
+            print(f"    {t:<28} {cnt:5d}  ({100*cnt/len(groupTypes):.1f}%)")
 
 
 def _confusionBreakdown(
@@ -166,6 +208,7 @@ def _confusionBreakdown(
     confusionSplit: str | None = None,
     distanceKm: np.ndarray | None = None,
     altitudeFt: np.ndarray | None = None,
+    velocityKts: np.ndarray | None = None,
 ) -> None:
     """
     For clips whose ground truth includes targetClass, show what the model
@@ -179,10 +222,11 @@ def _confusionBreakdown(
     whether a specific aircraft subtype within a merged category (ERJ/E-Jets
     within narrowbody_jet) is driving the confusion differently than the rest.
 
-    If distanceKm/altitudeFt are given, each top-1 confusor group also shows
-    its mean distance/altitude — e.g. to check whether a given confusor is
-    systematically driven by distant/quiet clips rather than airframe
-    similarity.
+    If distanceKm/altitudeFt/velocityKts are given, each top-1 confusor group
+    also shows its mean distance/altitude/speed — e.g. to check whether a
+    given confusor is systematically driven by distant/quiet or slow/low-
+    thrust clips rather than airframe similarity. If vehicleTypes is given,
+    the top confusor groups also show their most common aircraft models.
     """
     labelToIndex = {v: k for k, v in indexToLabel.items()}
     if targetClass not in labelToIndex:
@@ -199,18 +243,23 @@ def _confusionBreakdown(
     subProbs = allProbs[mask]
     subDistance = distanceKm[mask] if distanceKm is not None else None
     subAltitude = altitudeFt[mask] if altitudeFt is not None else None
+    subVelocity = velocityKts[mask] if velocityKts is not None else None
+    subVehicleTypes = [vehicleTypes[i] for i in np.where(mask)[0]] if vehicleTypes is not None else None
     print(f"\n{'═'*60}")
     print(f"  CONFUSION BREAKDOWN — true class: {targetClass}  (n={nTarget})")
     print(f"{'═'*60}")
     _printConfusionTable(subProbs, indexToLabel, targetIdx, "  Overall:",
-                          distanceKm=subDistance, altitudeFt=subAltitude)
+                          distanceKm=subDistance, altitudeFt=subAltitude,
+                          velocityKts=subVelocity)
     print(f"  (* = the true class itself)")
 
-    if confusionSplit and vehicleTypes is not None:
-        maskedVehicleTypes = [vehicleTypes[i] for i in np.where(mask)[0]]
+    if subVehicleTypes is not None:
+        _printTopVehicleTypesByGroup(subProbs, subVehicleTypes, indexToLabel, targetIdx)
+
+    if confusionSplit and subVehicleTypes is not None:
         matchFlags = np.array([
             any(confusionSplit.lower() in v.lower() for v in json.loads(vt))
-            for vt in maskedVehicleTypes
+            for vt in subVehicleTypes
         ])
         for label, flags in [
             (f"vehicle_types contains '{confusionSplit}'", matchFlags),
@@ -223,6 +272,7 @@ def _confusionBreakdown(
                 subProbs[flags], indexToLabel, targetIdx, f"  {label} (n={n}):",
                 distanceKm=subDistance[flags] if subDistance is not None else None,
                 altitudeFt=subAltitude[flags] if subAltitude is not None else None,
+                velocityKts=subVelocity[flags] if subVelocity is not None else None,
             )
 
 
@@ -348,6 +398,7 @@ def _evalCsv(
             confusionSplit=confusionSplit,
             distanceKm=valDf["distanceKm"].to_numpy() if "distanceKm" in valDf else None,
             altitudeFt=valDf["altitudeFt"].to_numpy() if "altitudeFt" in valDf else None,
+            velocityKts=valDf["velocityKts"].to_numpy() if "velocityKts" in valDf else None,
         )
 
 
