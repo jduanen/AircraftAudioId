@@ -747,3 +747,57 @@ configs_to_try = [
     available during a DGX eval run, not reconstructable locally) to test
     whether the piston_single-confused clips skew toward the E-Jet subset.
     Left open rather than acted on.
+  - **Follow-up: `--confusionSplit ERJ` on narrowbody_jet (2026-07-21)**
+    decisively localized the effect. Split the confusion breakdown by
+    whether `vehicle_types` matched "ERJ": the ERJ subset ties
+    narrowbody_jet/piston_single in mean probability (0.462 vs 0.460) and
+    shows elevated turboprop confusion (20.3% vs the mainline subset's
+    4.3%) — the E-Jet clips are not just "noisier narrowbody_jet", they
+    genuinely compete with a different set of classes than mainline
+    aircraft do. This, plus the raw regional_jet pool having grown to
+    54,269 clips (computed via the same FAA seat-count logic used at
+    extraction time, `noSeats` 20-100 — over 16x the ~3,300 clips
+    available when regional_jet first collapsed as a standalone class
+    pre-merge), was strong enough grounds to re-test the split rather than
+    treat the 2026-07-04 merge as permanent.
+  - **Re-split experiment (2026-07-21): reverted, retrained, result
+    negative.** Reverted the 2026-07-04 merge in both `typeCategories.py`
+    (`_EXPLICIT`/`_KEYWORD_RULES`) and `faaDatabase.py`
+    (`_deriveCategory`'s `noSeats <= 100 -> regional_jet` branch),
+    recategorized the full 497,250-row raw pool in place via
+    `FaaDatabase.categoryForIcao24()` (55,203 rows changed), rebuilt with
+    the same validated `bestN=6000 --deepAnalysis` pipeline (46,136 clips:
+    6000/category except piston_twin at its 4136 natural max), and
+    retrained with identical hyperparameters. Best checkpoint epoch 21,
+    val_f1 0.514. **Result: mAP 0.582 -> 0.518, Macro-F1 0.580 -> 0.545 —
+    both classes come back worse than the merged class was.**
+    `narrowbody_jet` AP 0.286 (down from 0.354 merged, 0.499 before that)
+    and the new `regional_jet` AP 0.226 — the two worst-performing classes
+    by a wide margin (next-worst, turboprop, is 0.528). Conclusion: the
+    9x larger raw pool did not fix the underlying issue — `regional_jet`
+    and `narrowbody_jet` are not primarily data-limited, they are
+    acoustically confusable to this model's feature representation
+    (dual-band mel spectrogram + ResNet-18 backbone), consistent with the
+    `--confusionSplit` finding that E-Jets compete most with
+    turboprop/piston_single, not cleanly with either jet class. Splitting
+    them just gives the model two adjacent-but-indistinct classes instead
+    of one merged class with internal heterogeneity. **Decision: revert
+    back to the merged `narrowbody_jet` (regional_jet folded in), keep the
+    0.582/epoch=27/val_f1=0.560 checkpoint as the banked best.** Any future
+    attempt at separating E-Jets from mainline narrowbody aircraft should
+    target the feature representation (e.g. a spectral feature more
+    sensitive to the regional-jet acoustic signature) rather than raw
+    clip count.
+  - **Revert confirmed (2026-07-21).** Recategorized `dataset.csv` back to
+    the merged scheme (54,269 rows reverted `regional_jet` -> `narrowbody_jet`,
+    matching the pre-split distribution exactly), rebuilt with the same
+    `bestN=6000 --deepAnalysis` pipeline (40,136 clips, identical per-class
+    caps to the original 7-class rebuild), retrained with identical
+    hyperparameters. Best checkpoint epoch 22, val_f1 0.563. **mAP 0.598,
+    Macro-F1 0.588** — slightly *above* the previously-banked 0.582/0.580
+    (run-to-run variance), confirming the revert fully recovers (and
+    marginally beats) the pre-split state. This is now the banked best
+    checkpoint. `narrowbody_jet` AP 0.397 remains the weakest class, as
+    expected — that heterogeneity issue is real but independent of the
+    split experiment and stays open per the note above (feature-level fix,
+    not clip-count, is the likely path if revisited).
