@@ -592,6 +592,7 @@ bash scripts/evalBestDGX.sh \
     --valCsv dataset/val.csv --useCategories \
     --confusionFor narrowbody_jet --confusionSplit ERJ
 ```
+  - When the val CSV has `distanceKm`/`altitudeFt` columns, `--confusionFor` output also shows each top-1 confusor group's mean distance/altitude — e.g. to check whether a confusor is driven by distant/quiet clips rather than genuine airframe similarity.
 
 11) Inference
   - ?

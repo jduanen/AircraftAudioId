@@ -120,25 +120,41 @@ def _printConfusionTable(
     indexToLabel: dict[int, str],
     targetIdx: int,
     heading: str,
+    distanceKm: np.ndarray | None = None,
+    altitudeFt: np.ndarray | None = None,
 ) -> None:
     n = subProbs.shape[0]
     meanProb = subProbs.mean(axis=0)
     top1 = subProbs.argmax(axis=1)
     nClasses = subProbs.shape[1]
     top1Counts = np.bincount(top1, minlength=nClasses)
+    hasMeta = distanceKm is not None and altitudeFt is not None
 
     print(f"\n{heading}")
-    print(f"  {'Class':<22}  {'Mean Prob':>9}  {'Top-1 Count':>11}  {'Top-1 %':>8}")
-    print("  " + "─" * 56)
+    hdr = f"  {'Class':<22}  {'Mean Prob':>9}  {'Top-1 Count':>11}  {'Top-1 %':>8}"
+    if hasMeta:
+        hdr += f"  {'MeanDistKm':>10}  {'MeanAltFt':>10}"
+    print(hdr)
+    print("  " + "─" * (56 + (24 if hasMeta else 0)))
     order = sorted(range(nClasses), key=lambda c: -meanProb[c])
     for c in order:
         label = indexToLabel.get(c, f"class_{c}")
         marker = " *" if c == targetIdx else "  "
-        print(
+        row = (
             f"  {label:<22}{marker}  {meanProb[c]:9.3f}  {top1Counts[c]:11d}  "
             f"{100*top1Counts[c]/n:7.1f}%"
         )
-    print("  " + "─" * 56)
+        if hasMeta:
+            groupMask = top1 == c
+            if groupMask.sum() > 0:
+                row += (
+                    f"  {distanceKm[groupMask].mean():10.2f}"
+                    f"  {altitudeFt[groupMask].mean():10.0f}"
+                )
+            else:
+                row += f"  {'—':>10}  {'—':>10}"
+        print(row)
+    print("  " + "─" * (56 + (24 if hasMeta else 0)))
 
 
 def _confusionBreakdown(
@@ -148,6 +164,8 @@ def _confusionBreakdown(
     targetClass: str,
     vehicleTypes: list[str] | None = None,
     confusionSplit: str | None = None,
+    distanceKm: np.ndarray | None = None,
+    altitudeFt: np.ndarray | None = None,
 ) -> None:
     """
     For clips whose ground truth includes targetClass, show what the model
@@ -160,6 +178,11 @@ def _confusionBreakdown(
     clips whose vehicle_types match it vs. clips that don't — e.g. to check
     whether a specific aircraft subtype within a merged category (ERJ/E-Jets
     within narrowbody_jet) is driving the confusion differently than the rest.
+
+    If distanceKm/altitudeFt are given, each top-1 confusor group also shows
+    its mean distance/altitude — e.g. to check whether a given confusor is
+    systematically driven by distant/quiet clips rather than airframe
+    similarity.
     """
     labelToIndex = {v: k for k, v in indexToLabel.items()}
     if targetClass not in labelToIndex:
@@ -174,10 +197,13 @@ def _confusionBreakdown(
         return
 
     subProbs = allProbs[mask]
+    subDistance = distanceKm[mask] if distanceKm is not None else None
+    subAltitude = altitudeFt[mask] if altitudeFt is not None else None
     print(f"\n{'═'*60}")
     print(f"  CONFUSION BREAKDOWN — true class: {targetClass}  (n={nTarget})")
     print(f"{'═'*60}")
-    _printConfusionTable(subProbs, indexToLabel, targetIdx, "  Overall:")
+    _printConfusionTable(subProbs, indexToLabel, targetIdx, "  Overall:",
+                          distanceKm=subDistance, altitudeFt=subAltitude)
     print(f"  (* = the true class itself)")
 
     if confusionSplit and vehicleTypes is not None:
@@ -193,7 +219,11 @@ def _confusionBreakdown(
             n = int(flags.sum())
             if n == 0:
                 continue
-            _printConfusionTable(subProbs[flags], indexToLabel, targetIdx, f"  {label} (n={n}):")
+            _printConfusionTable(
+                subProbs[flags], indexToLabel, targetIdx, f"  {label} (n={n}):",
+                distanceKm=subDistance[flags] if subDistance is not None else None,
+                altitudeFt=subAltitude[flags] if subAltitude is not None else None,
+            )
 
 
 def _evalCsv(
@@ -316,6 +346,8 @@ def _evalCsv(
             allProbs, allLabels, indexToLabel, confusionFor,
             vehicleTypes=valDf["vehicle_types"].tolist(),
             confusionSplit=confusionSplit,
+            distanceKm=valDf["distanceKm"].to_numpy() if "distanceKm" in valDf else None,
+            altitudeFt=valDf["altitudeFt"].to_numpy() if "altitudeFt" in valDf else None,
         )
 
 
