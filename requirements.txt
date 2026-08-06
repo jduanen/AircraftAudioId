@@ -19,3 +19,6 @@ soundfile
 # Networking / ADS-B
 requests
 geopy
+
+# Visualization
+matplotlib
