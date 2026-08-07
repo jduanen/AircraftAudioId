@@ -129,6 +129,10 @@ python scripts/vizSpecs.py --csv dataset/train.csv --output specs.png
 
 # interactive mode: click a spectrogram to play its audio (requires sounddevice + soundfile)
 python scripts/vizSpecs.py --csv dataset/train.csv --play
+
+# flag bad clips for exclusion: click a spectrogram to toggle a red border;
+# flagged filepaths are written to bad_helicopter.csv after every click
+python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --flagOutput bad_helicopter.csv
 ```
   - options:
     * `--csv` (required): path to `train.csv` or `val.csv`
@@ -138,6 +142,49 @@ python scripts/vizSpecs.py --csv dataset/train.csv --play
     * `--seed` (default 42): random seed — change to see a different sample
     * `--output`: save to file instead of displaying
     * `--play`: enable click-to-play audio; clicking a spectrogram plays the corresponding WAV
+    * `--flagOutput <csv>`: click a spectrogram to flag it for exclusion (red border); flagged filepaths are written to this CSV (one `filepath` column) after every click. Re-running with the same file loads and extends the existing flags, so you can page through a category across multiple `--seed` runs and accumulate into one file. If `--play` is also given, left-click plays and right-click flags; otherwise any click flags.
+
+* **`scripts/excludeFlaggedClips.py`**: remove clips flagged via `vizSpecs.py --flagOutput` from a dataset
+  - removes any row whose filepath appears in the flagged CSV from `dataset.csv`, `train.csv`, and `val.csv` (whichever are present in `--datasetDir`); backs up each modified file first (`backup_<timestamp>_<name>.csv`)
+  - excludes from `dataset.csv` (the raw pool) too, not just train/val — otherwise a future `buildQualityDataset*.py`/`addNewRecordings.py` re-rank could re-select the same flagged clips right back in
+  - the flagged CSV's filepaths must match the prefix of `--datasetDir`'s CSVs (flag against whichever copy — repo or master — you intend to filter; run once per copy if you want both updated)
+  - e.g.,
+```bash
+python scripts/excludeFlaggedClips.py \
+    --flagged bad_helicopter.csv \
+    --datasetDir /mnt/nvme/aircraft_data/datasets/dataset_best3000
+
+# also delete the underlying WAV/.spec.npy files from disk (irreversible):
+python scripts/excludeFlaggedClips.py --flagged bad_helicopter.csv --datasetDir dataset --deleteFiles
+```
+  - options:
+    * `--flagged <csv>` (required): CSV from `vizSpecs.py --flagOutput`
+    * `--datasetDir <dir>` (required): directory containing `dataset.csv`/`train.csv`/`val.csv` to filter
+    * `--deleteFiles`: also delete the flagged WAV (and `.spec.npy` sidecar) from disk; off by default since removing the CSV rows is enough to keep flagged clips out of training and future rebuilds
+
+* **`scripts/flagContaminatedClips.py`**: automatically detect background-noise contamination and write a flagged-clips CSV
+  - flags clips containing wind, yard machinery (lawn mowers, chainsaws), birds, or crowd noise (cheering/clapping/applause), plus near-silent clips
+  - wind/machinery/birds/crowd detection uses a pretrained PANNs (AudioSet) audio tagger via `panns-inference` (CNN14, downloads its ~300MB checkpoint to `~/panns_data` on first run) — no training/fine-tuning needed, just inference against AudioSet's existing label set; near-silence is checked directly from `clipRms`, no audio read required
+  - "machinery" deliberately checks only the Lawn mower/Chainsaw AudioSet labels — the generic Engine/Aircraft engine/Jet engine labels are excluded since real aircraft clips are expected to trigger those too
+  - output columns are `filepath`/`type_categories`/`reason`/`score` — the first two make it directly viewable with `vizSpecs.py`, and `excludeFlaggedClips.py` only needs `filepath`, so both downstream steps work unmodified
+  - e.g.,
+```bash
+python scripts/flagContaminatedClips.py \
+    --csv dataset/train.csv --csv dataset/val.csv \
+    --output flagged_contamination.csv
+
+# spot-check before excluding
+python scripts/vizSpecs.py --csv flagged_contamination.csv --play
+
+# then exclude
+python scripts/excludeFlaggedClips.py --flagged flagged_contamination.csv --datasetDir dataset
+```
+  - options:
+    * `--csv <path>` (required, repeatable): dataset CSV(s) to scan
+    * `--output <csv>` (required): path to write the flagged-clips CSV
+    * `--threshold` (default 0.15): AudioSet tag probability above which a clip is flagged for that group
+    * `--quietThresholdDb` (default -55): near-silence cutoff, matching `evalClipQuality.py`'s existing low-quality bar
+    * `--batchSize` (default 32), `--device` (default `cuda`, falls back to `cpu` automatically)
 
 * **`scripts/inspectDataset.py`**: provides a measure of the quantity, quality, and distribution of collected training/testing samples
   - this takes an inventory of the samples in the dataset and prints information about the data dataset described in `<recordingsDir>/../dataset/dataset.csv`.
@@ -592,7 +639,16 @@ bash scripts/evalBestDGX.sh \
     --valCsv dataset/val.csv --useCategories \
     --confusionFor narrowbody_jet --confusionSplit ERJ
 ```
-  - When the val CSV has `distanceKm`/`altitudeFt` columns, `--confusionFor` output also shows each top-1 confusor group's mean distance/altitude — e.g. to check whether a confusor is driven by distant/quiet clips rather than genuine airframe similarity.
+  - When the val CSV has `distanceKm`/`altitudeFt`/`velocityKts` columns, `--confusionFor` output also shows each top-1 confusor group's mean distance/altitude/speed, and the most common `vehicle_types` behind each confusor group — e.g. to check whether a confusor is driven by distant/quiet or slow/low-thrust clips, or by a specific airframe/model, rather than genuine class-level acoustic similarity.
+  - `--confusionDump <prefix>` (requires `--confusionFor`) writes one CSV per top-1 confusor group (`<prefix>_<label>.csv`, sorted by predicted-class probability descending) with `filepath`/`type_categories` columns, so it can be fed straight into `vizSpecs.py` to visually/audibly inspect exactly the clips driving a specific confusion:
+```bash
+bash scripts/evalBestDGX.sh \
+    --labelEncoder /checkpoints/labelEncoder.json \
+    --valCsv dataset/val.csv --useCategories \
+    --confusionFor narrowbody_jet --confusionDump /checkpoints/narrowbody_confusion
+
+python scripts/vizSpecs.py --csv /checkpoints/narrowbody_confusion_piston_single.csv --n 12 --play
+```
 
 11) Inference
   - ?

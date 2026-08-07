@@ -8,6 +8,7 @@ Usage:
     python scripts/vizSpecs.py --csv dataset/train.csv
     python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --n 12
     python scripts/vizSpecs.py --csv dataset/train.csv --output specs.png
+    python scripts/vizSpecs.py --csv dataset/train.csv --category helicopter --flagOutput bad_helicopter.csv
 """
 
 import argparse
@@ -48,6 +49,12 @@ def main():
     p.add_argument("--play",     action="store_true",   help="Click a spectrogram to play its audio")
     p.add_argument("--channel",  type=int, default=0, choices=[0, 1],
                    help="Which dual-band channel to display: 0=low band (<=8kHz), 1=high band (>=8kHz). Default: 0")
+    p.add_argument("--flagOutput", type=str, default=None,
+                   help="Click a spectrogram to flag it for exclusion (red border); flagged filepaths are "
+                        "written to this CSV after every click. Re-running with the same --flagOutput file "
+                        "loads and extends the existing flags, so you can page through a category across "
+                        "multiple --seed runs and accumulate into one file. If --play is also given, "
+                        "left-click plays and right-click flags; otherwise any click flags.")
     args = p.parse_args()
 
     df = pd.read_csv(args.csv)
@@ -59,6 +66,11 @@ def main():
             sys.exit(f"No clips found for category '{args.category}'")
 
     sample = df.sample(min(args.n, len(df)), random_state=args.seed).reset_index(drop=True)
+
+    flaggedPaths = set()
+    if args.flagOutput and Path(args.flagOutput).exists():
+        flaggedPaths = set(pd.read_csv(args.flagOutput)["filepath"])
+        print(f"Loaded {len(flaggedPaths)} previously-flagged clip(s) from {args.flagOutput}")
 
     cols = args.cols
     rows = (len(sample) + cols - 1) // cols
@@ -72,6 +84,10 @@ def main():
         axes[i].set_title(", ".join(json.loads(row[labelCol])), fontsize=8)
         axes[i].tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
         axToPath[axes[i]] = row["filepath"]
+        if row["filepath"] in flaggedPaths:
+            for spine in axes[i].spines.values():
+                spine.set_edgecolor("red")
+                spine.set_linewidth(3)
 
     for ax in axes[len(sample):]:
         ax.set_visible(False)
@@ -83,14 +99,12 @@ def main():
     fig.suptitle(title, fontsize=10)
     plt.tight_layout()
 
-    if args.play:
-        import sounddevice as sd
-        import soundfile as sf
+    if args.play or args.flagOutput:
+        if args.play:
+            import sounddevice as sd
+            import soundfile as sf
 
-        def _onclick(event):
-            if event.inaxes not in axToPath:
-                return
-            path = axToPath[event.inaxes]
+        def _playAudio(path):
             print(f"Playing: {Path(path).name}")
             def _play():
                 audio, sr = sf.read(path, dtype="float32", always_2d=False)
@@ -98,8 +112,37 @@ def main():
                 sd.play(audio, sr)
             threading.Thread(target=_play, daemon=True).start()
 
+        def _toggleFlag(ax, path):
+            if path in flaggedPaths:
+                flaggedPaths.discard(path)
+                color, width = "black", 0.8
+                print(f"Unflagged ({len(flaggedPaths)} total): {Path(path).name}")
+            else:
+                flaggedPaths.add(path)
+                color, width = "red", 3
+                print(f"Flagged ({len(flaggedPaths)} total): {Path(path).name}")
+            for spine in ax.spines.values():
+                spine.set_edgecolor(color)
+                spine.set_linewidth(width)
+            fig.canvas.draw_idle()
+            pd.DataFrame({"filepath": sorted(flaggedPaths)}).to_csv(args.flagOutput, index=False)
+
+        def _onclick(event):
+            if event.inaxes not in axToPath:
+                return
+            path = axToPath[event.inaxes]
+            if args.flagOutput and (not args.play or event.button == 3):
+                _toggleFlag(event.inaxes, path)
+            elif args.play and event.button == 1:
+                _playAudio(path)
+
         fig.canvas.mpl_connect("button_press_event", _onclick)
-        print("Click a spectrogram to play its audio.")
+        if args.play and args.flagOutput:
+            print("Left-click to play audio, right-click to flag for exclusion.")
+        elif args.play:
+            print("Click a spectrogram to play its audio.")
+        else:
+            print(f"Click a spectrogram to flag it for exclusion (-> {args.flagOutput}).")
 
     if args.output:
         plt.savefig(args.output, dpi=150, bbox_inches="tight")

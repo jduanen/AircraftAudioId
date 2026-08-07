@@ -199,6 +199,54 @@ def _printTopVehicleTypesByGroup(
             print(f"    {t:<28} {cnt:5d}  ({100*cnt/len(groupTypes):.1f}%)")
 
 
+def _dumpConfusionGroups(
+    subProbs: np.ndarray,
+    filepaths: list[str],
+    targetClass: str,
+    indexToLabel: dict[int, str],
+    targetIdx: int,
+    outPrefix: str,
+    vehicleTypes: list[str] | None = None,
+    distanceKm: np.ndarray | None = None,
+    altitudeFt: np.ndarray | None = None,
+    velocityKts: np.ndarray | None = None,
+) -> None:
+    """
+    Write one CSV per top-1 confusor group among targetClass's true clips,
+    each with `filepath` + `type_categories` columns so it can be fed
+    straight into vizSpecs.py (e.g. `--csv <outPrefix>_piston_single.csv`)
+    to visually/audibly inspect exactly the clips driving a confusion,
+    without needing to guess a category filter.
+    """
+    top1 = subProbs.argmax(axis=1)
+    nClasses = subProbs.shape[1]
+    for c in range(nClasses):
+        groupIdx = np.where(top1 == c)[0]
+        if len(groupIdx) == 0:
+            continue
+        label = indexToLabel.get(c, f"class_{c}")
+        rows = []
+        for i in groupIdx:
+            row = {
+                "filepath": filepaths[i],
+                "type_categories": json.dumps([targetClass]),
+                "probTrueClass": float(subProbs[i, targetIdx]),
+                "probPredicted": float(subProbs[i, c]),
+            }
+            if vehicleTypes is not None:
+                row["vehicle_types"] = vehicleTypes[i]
+            if distanceKm is not None:
+                row["distanceKm"] = float(distanceKm[i])
+            if altitudeFt is not None:
+                row["altitudeFt"] = float(altitudeFt[i])
+            if velocityKts is not None:
+                row["velocityKts"] = float(velocityKts[i])
+            rows.append(row)
+        outPath = f"{outPrefix}_{label}.csv"
+        pd.DataFrame(rows).sort_values("probPredicted", ascending=False).to_csv(outPath, index=False)
+        print(f"  Dumped {len(rows)} clips (predicted '{label}') -> {outPath}")
+
+
 def _confusionBreakdown(
     allProbs: np.ndarray,
     allLabels: np.ndarray,
@@ -209,6 +257,8 @@ def _confusionBreakdown(
     distanceKm: np.ndarray | None = None,
     altitudeFt: np.ndarray | None = None,
     velocityKts: np.ndarray | None = None,
+    filepaths: list[str] | None = None,
+    confusionDump: str | None = None,
 ) -> None:
     """
     For clips whose ground truth includes targetClass, show what the model
@@ -256,6 +306,14 @@ def _confusionBreakdown(
     if subVehicleTypes is not None:
         _printTopVehicleTypesByGroup(subProbs, subVehicleTypes, indexToLabel, targetIdx)
 
+    if confusionDump and filepaths is not None:
+        subFilepaths = [filepaths[i] for i in np.where(mask)[0]]
+        _dumpConfusionGroups(
+            subProbs, subFilepaths, targetClass, indexToLabel, targetIdx, confusionDump,
+            vehicleTypes=subVehicleTypes, distanceKm=subDistance,
+            altitudeFt=subAltitude, velocityKts=subVelocity,
+        )
+
     if confusionSplit and subVehicleTypes is not None:
         matchFlags = np.array([
             any(confusionSplit.lower() in v.lower() for v in json.loads(vt))
@@ -290,6 +348,7 @@ def _evalCsv(
     backbone: str = "resnet18",
     confusionFor: str | None = None,
     confusionSplit: str | None = None,
+    confusionDump: str | None = None,
 ) -> None:
     from sklearn.metrics import (
         precision_recall_fscore_support,
@@ -399,6 +458,8 @@ def _evalCsv(
             distanceKm=valDf["distanceKm"].to_numpy() if "distanceKm" in valDf else None,
             altitudeFt=valDf["altitudeFt"].to_numpy() if "altitudeFt" in valDf else None,
             velocityKts=valDf["velocityKts"].to_numpy() if "velocityKts" in valDf else None,
+            filepaths=valDf["filepath"].tolist(),
+            confusionDump=confusionDump,
         )
 
 
@@ -429,6 +490,12 @@ def main():
                         "that match vs. don't, e.g. --confusionFor narrowbody_jet "
                         "--confusionSplit ERJ to check whether the former regional_jet subtype "
                         "confuses differently than mainline narrowbody clips.")
+    p.add_argument("--confusionDump",  type=str, default=None,
+                   help="Requires --confusionFor. Path prefix; writes one CSV per top-1 confusor "
+                        "group (<prefix>_<label>.csv, sorted by predicted-class probability "
+                        "descending) with filepath/type_categories columns so it can be fed "
+                        "directly to vizSpecs.py --csv <prefix>_<label>.csv to inspect exactly "
+                        "the clips driving a specific confusion.")
     p.add_argument("--batchSize",      type=int, default=64)
     p.add_argument("--workers",        type=int, default=4)
     args = p.parse_args()
@@ -476,6 +543,7 @@ def main():
             backbone=backbone,
             confusionFor=args.confusionFor,
             confusionSplit=args.confusionSplit,
+            confusionDump=args.confusionDump,
         )
 
 
