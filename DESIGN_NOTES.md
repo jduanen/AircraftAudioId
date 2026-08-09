@@ -801,3 +801,49 @@ configs_to_try = [
     expected — that heterogeneity issue is real but independent of the
     split experiment and stays open per the note above (feature-level fix,
     not clip-count, is the likely path if revisited).
+  - **Full re-rank + contamination cleanup (2026-08-06/07): mixed result,
+    narrowbody_jet improved, piston_twin regressed.** Two independent
+    changes stacked before this retrain: (1) `addNewRecordings.py` pulled
+    ~2,328 new recordings (107,697 candidate clips) into the raw pool,
+    growing it 497,251 -> 604,947 rows, then `buildQualityDataset.py
+    --bestN 6000 --deepAnalysis` re-ranked the *entire* pool from scratch
+    (not just the new candidates) — 5,912/40,738 clips (14.5%) were
+    swapped for higher composite-score clips, most of them in the
+    largest-raw-pool categories (narrowbody_jet had 160,333 candidates to
+    choose from). (2) New `scripts/flagContaminatedClips.py` (PANNs/
+    AudioSet tagger for wind/machinery/birds/crowd, plus an RMS-based
+    near-silence check) flagged 6,165/40,738 clips (15.1%) — birds 3,683,
+    quiet 2,224, machinery 173, wind 85, crowd 0 (threshold may be too
+    strict for transient cheering/clapping, not re-tested) — removed via
+    `excludeFlaggedClips.py`. Flagged rate was wildly uneven: piston_twin
+    46.7% (2,213/4,738 — it was already the only under-cap category, so
+    the quality bar had let in far more marginal clips), business_jet
+    22.1%, down to widebody_jet 3.9%.
+    Retrained with identical hyperparameters (`--useCategories
+    --freezeBackbone --weightDecay 0.05 --patience 60`, best checkpoint
+    epoch 71, val_f1 0.576). **mAP 0.598 -> 0.5878, Macro-F1 0.588 ->
+    0.5846** — a small aggregate drop, but within the run-to-run noise
+    band already observed between the two merge-revert runs (0.582 vs
+    0.598, a 0.016 swing with no data change at all), so not by itself
+    conclusive either way. Per-class tells a clearer story:
+    **`narrowbody_jet` AP 0.397 -> 0.430** (the class this whole
+    investigation thread was chasing — a genuine improvement, plausibly
+    from the re-rank pulling better clips from its 160,333-candidate
+    pool) but **`piston_twin` AP collapsed to 0.294, now the worst class**
+    (positive rate down to 3.8% of val). Mechanism is well-supported, not
+    just noise: piston_twin's raw pool was already fully exhausted before
+    this round (4,738 available == 4,738 kept, no headroom to pick around
+    low-quality clips), so removing 2,213 contaminated clips from it had
+    nowhere to be backfilled from — unlike every other category, which
+    could absorb losses from a much larger remaining candidate pool.
+    **Open thread: piston_twin needs new raw recordings, not another
+    re-rank or cleanup pass — the category is data-limited, not
+    quality-limited, and no amount of re-selecting from the existing
+    4,738-clip pool can fix that.**
+    **Decision: bank `epoch=71-val_f1=0.576.ckpt` (mAP 0.5878, Macro-F1
+    0.5846) as the new best**, despite the lower aggregate mAP than
+    0.598 — it's trained on the current (re-ranked + contamination-
+    cleaned) dataset going forward, and the `narrowbody_jet` improvement
+    is real. `piston_twin`'s regression is tracked as a separate,
+    data-collection problem (targeted piston_twin recording sessions),
+    not a reason to discard this checkpoint or the cleanup work.
