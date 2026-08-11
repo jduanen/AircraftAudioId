@@ -425,7 +425,13 @@ In addition the using the same microphone as used in the local system (to gather
 
 This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit, as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
 
-The unit has a water-resistant power connector for the 12VDC (@?A) power supply required to operate the unit.
+The USB-SDR dongle is attached via a USB-A connector to the USB1 connector and the microphone is connected via a USB-C connector to the USB2 connector.
+
+A micro-SD socket for the bulk storage is connected to the SPI1 connector.
+
+The Ochin daughterboard schematics must be consulted to determine how to wire the JST-GH-1.25 4-pin (USB) and 6-pin (UART and SPI) connectors.
+
+The unit has a water-resistant power connector for the 12VDC (@?A) power supply required to operate the unit. This switch is lighted and is connected at one end to the 3V3 pin on UART0/1, and the other side is connected to the RTS pin on USART4.
 
 The enslosure is a cast aluminium case that serves as a heat-sink for the CM4 module (and, if possible, the USB-SDR dongle).
 The three (ADS-B 1090MHz, WiFi, and GPS) antennas are mounted onto the enclosure in such a manner as to resist water infiltration.
@@ -439,6 +445,61 @@ The (software-controlled) illuminated power switch is the only indication that t
 It is expected that, in order to gather sufficient data, this unit will remain in a location for days to months at a time. This means that the unit must contain sufficient storage space to contain all of the samples and metadata generated before the unit is retreived and the information dumped. Once free storage drops below a threshold, new recordings are halted (never auto-deleted) and the LED switches to its error-blink pattern, signaling that the unit needs retrieval.
 
 Because the unit is moved by power-cycling it (there's no way to relocate a sealed, running unit), it reads its position from the on-board GPS receiver exactly once at startup — blocking until a fix is acquired — and uses that fixed position for the entire run. There is no runtime location-change detection or mid-run restart; a fresh fix is simply acquired the next time the unit boots.
+
+#### Installation
+
+##### Install 64-bit Trixie Lite OS on the CM4's eMMC
+
+* on the daughtercard: hold boot mode button, apply power to pads, then release boot button
+* connect the CM4 to host via the daughtercard's USB-C connector and run `rpiboot` on the host
+  - should see a raw memory device on the host
+* run `rpi-imager` to flash the CM4's on-board eMMC
+* do update and global installs
+  - `sudo apt update`
+  - `sudo apt upgrade`
+  - `sudo apt install -y python3-pip python3-venv`
+* add select linuxTools
+  - `mkdir ~/bin`
+  - `scp jdn@gpuServer1.lan:Code/linuxTools/scripts/{maxTemp,rssi,volts}.sh ~/bin/`
+
+##### Enable the micro-SD on the SPI Bus
+
+* describe the SPI SD socket in the device tree in the file 'cm4-sdspi.dts'
+  - create Device Tree overlay for the SPI bus and CS wired to the socket
+    * SPI_0, CE_1, 3.3V-only, no card-detect switch
+    * CS: GPIO18, SPI1_CE0_N
+    * MISO: GPIO19, SPI1_MISO
+    * MOSI: GPIO20, SPI1_MOSI
+    * SCLK: GPIO21, SPI1_SCLK
+  - the SPI CE signal is connected to the CM4's GPIO18 pin -- i.e., CE_1
+* compile and install the Device Tree overlay
+  - `sudo apt update`
+  - `sudo apt install -y device-tree-compiler`
+  - `dtc -@ -I dts -O dtb -o cm4-sdspi.dtbo cm4-sdspi.dts`
+  - `sudo install -m 0644 cm4-sdspi.dtbo /boot/firmware/overlays/cm4-sdspi.dtbo`
+  - check it
+    * `ls -l /boot/firmware/overlays/cm4-sdspi.dtbo`
+  - enable it by adding 'dtoverlay=cm4-sdspi' to '/boot/firmware/config.txt'
+    * do not use 'dtparam=spi=on' or the 'spi1-1cs/spi1-2cs/spi1-3cs' overlay
+  - check if generic spidev device gets created on SPI1 CE0
+    * if so, it conflicts with the SD-card driver
+    * `ls -l /dev/spidev*`
+      - should show nothing for spi1
+      - if spidev1.0 exists, something is still claiming the bus generically
+    * `dmesg | grep -Ei 'spi|mmc'`
+      - look for mmc_spi binding to spi1.0 and a new mmcblkN device
+    * `ls /dev/mmcblk*`
+      - this should be the card itself, once mmc_spi has claimed it
+  - for testing, comment out the dtoverlay line in config.txt
+    * to test:
+      - `echo spi1.0 | sudo tee /sys/bus/spi/drivers/mmc_spi/bind`
+        * this is a manual, no-overlay sanity check
+      - temporarily use the stock 'spi1-1cs' overlay instead (which mux's the pins correctly and creates /dev/spidev1.0), unbind 'spidev' from it, and hand-bind 'mmc_spi' to the same device path at runtime
+      - this is a reasonable way to confirm the wiring and the card itself both work before trusting the custom overlay's DT syntax
+        * worth doing first, since it isolates "is the hardware/wiring good" from "is my custom .dts correct"
+
+* Sync selected parts of host repo to the device
+  - ????
 
 ### Workflow
 
