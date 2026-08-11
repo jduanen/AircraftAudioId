@@ -1,0 +1,23 @@
+[
+  {
+    "index": 0,
+    "name": "iMM-6C: USB Audio (hw:0,0)",
+    "maxSampleRate": 96000,
+    "noiseFloorDbfs": -68.8,
+    "selfNoiseDbfs": -71.0,
+    "peakHeadroomDbfs": -54.2,
+    "snrDb": 23.0,
+    "spectralFlatness": 0.0003,
+    "octaveBandLevelsDbfs": {
+      "125 Hz": -18.623055034423732,
+      "250 Hz": -22.238539459575627,
+      "500 Hz": -27.900718373271417,
+      "1 kHz": 8.970336154291411,
+      "2 kHz": -36.67707618133288,
+      "4 kHz": -38.98656577110668,
+      "8 kHz": -40.74995423869783,
+      "16 kHz": -42.63920434757623
+    },
+    "error": false
+  }
+]
