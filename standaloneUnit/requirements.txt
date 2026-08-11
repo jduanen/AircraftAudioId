@@ -1,0 +1,19 @@
+# Standalone Data Collection unit (CM4), for the AircraftAudioId project
+
+# Audio I/O
+sounddevice
+soundfile
+
+# Data / networking
+requests
+geopy
+scipy
+numpy
+pandas
+
+# GPS (serial + NMEA parsing)
+pyserial
+pynmea2
+
+# Status LED (GPIO)
+gpiod

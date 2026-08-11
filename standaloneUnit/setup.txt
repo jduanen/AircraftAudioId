@@ -1,0 +1,67 @@
+# Setup for the Standalone Data Collection unit (CM4, running Trixie) for the AircraftAudioId project
+
+# CM4 eMMC flash and base OS bring-up: see audioCapture/AudioCap2.txt
+# (rpiboot flashing, USB host mode) — that file's "Setup Audio Capture for
+# AAI" TODO stubs are filled in below.
+
+# create venv (first time only)
+  * `mkdir -p Code/AircraftAudioId/standaloneUnit`
+  * `cd Code/AircraftAudioId/standaloneUnit`
+  * `python3 -m venv venv`
+
+# activate venv and install packages
+  * `source venv/bin/activate`
+  * `pip install -r requirements.txt`
+
+# set up local ADS-B capture (readsb / dump1090-fa against the FlightAware USB-SDR dongle)
+  * `sudo apt update`
+  * install readsb (or dump1090-fa — either serves an aircraft.json endpoint)
+    - `sudo apt install readsb`
+  * configure it to read from the USB-SDR dongle and serve JSON on localhost
+    - edit `/etc/default/readsb` (package-dependent; confirm during bring-up):
+      * enable `--net`
+      * confirm the served aircraft.json path — commonly `/data/aircraft.json` for a
+        plain readsb install, or `/tar1090/data/aircraft.json` if tar1090 is also
+        installed for a local web UI. Whichever it is, it must match
+        `--readsbUrl` passed to `scripts/standaloneRecord.py`
+        (`standaloneRecorder.service`'s default is `http://localhost/data/aircraft.json`
+        — update it to match once confirmed)
+  * `sudo systemctl enable --now readsb`
+  * verify: `curl http://localhost/data/aircraft.json`
+
+# set up GPS time discipline (gpsd + chrony, since this unit has no internet for NTP)
+  * `sudo apt install gpsd chrony`
+  * point gpsd at the GPS receiver's serial device
+    - `sudo ex /etc/default/gpsd`
+      * `DEVICES="/dev/ttyAMA3"`  (match whichever UART the GPS is wired to)
+    - `sudo systemctl enable --now gpsd`
+  * verify raw NMEA output before wiring in GpsClient: `cat /dev/ttyAMA3`
+  * discipline chrony from gpsd's shared-memory (SHM) time reference
+    - `sudo systemctl stop systemd-timesyncd`
+    - `sudo systemctl disable systemd-timesyncd`
+    - `sudo ex /etc/chrony/chrony.conf`
+      * comment out default network pools (no internet on this unit)
+      * add: `refclock SHM 0 offset 0.0 delay 0.2 refid GPS`
+      * if the GPS module exposes a PPS line, also add a `refclock PPS` line for
+        tighter discipline
+    - `sudo systemctl restart chronyd`
+  * check status: `chronyc sources`, `chronyc tracking`
+
+# set up the status LED GPIO (see cm4-led-gpio.dts in this directory)
+  * confirm the BCM GPIO number for the freed RTS4/CTS4 pin against the CM4
+    schematic (audioCapture/ochin_CM4_topDoc.png) — the .dts ships with a
+    `<TBD>` placeholder for `brcm,pins`
+  * `sudo apt install -y device-tree-compiler`
+  * `dtc -@ -I dts -O dtb -o cm4-led-gpio.dtbo cm4-led-gpio.dts`
+  * `sudo install -m 0644 cm4-led-gpio.dtbo /boot/firmware/overlays/cm4-led-gpio.dtbo`
+  * add `dtoverlay=cm4-led-gpio` to `/boot/firmware/config.txt`
+  * after reboot, confirm the line appears: `sudo gpiodetect` / `sudo gpioinfo gpiochip0`
+  * update `--ledLine` in `standaloneRecorder.service` to match the confirmed GPIO offset
+
+# install and enable the standaloneRecorder service
+  cd ${HOME}/Code/AircraftAudioId/standaloneUnit
+  sudo cp etc/systemd/system/standaloneRecorder.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable standaloneRecorder
+  sudo systemctl start standaloneRecorder
+  sudo journalctl -u standaloneRecorder -f   # confirm it waits for / acquires a GPS fix, then starts recording

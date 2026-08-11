@@ -1,0 +1,23 @@
+[Unit]
+Description=Standalone aircraft audio/ADS-B/GPS recording unit
+After=network.target gpsd.service chronyd.service
+
+[Service]
+Type=simple
+User=jdn
+Group=jdn
+WorkingDirectory=/home/jdn/Code/AircraftAudioId
+ExecStart=/home/jdn/Code/AircraftAudioId/standaloneUnit/venv/bin/python \
+    /home/jdn/Code/AircraftAudioId/scripts/standaloneRecord.py \
+    --outputDir /home/jdn/Code/AircraftAudioId/recordings \
+    --readsbUrl http://localhost/data/aircraft.json \
+    --faaDatabaseDir /home/jdn/Code/AircraftAudioId/data/ReleasableAircraft \
+    --gpsPort /dev/ttyAMA3 \
+    --ledChip gpiochip0 --ledLine 17 \
+    --minFreeGb 2 \
+    --nullSampleInterval 210 --nullSampleDuration 15
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
