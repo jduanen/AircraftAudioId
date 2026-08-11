@@ -499,7 +499,10 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
         * worth doing first, since it isolates "is the hardware/wiring good" from "is my custom .dts correct"
 
 * Sync selected parts of host repo to the device
-  - ????
+  - **`../scripts/syncToStandalone.sh`**: run on the dev/recording machine, not the CM4
+    * `bash scripts/syncToStandalone.sh <standalone-hostname-or-ip> [--skipFaaDb]`
+    * syncs `src/aircraftAudio/`, `scripts/standaloneRecord.py`, `standaloneUnit/`, `audioCapture/cm4-sdspi.dts`, and `data/ReleasableAircraft/` (skip with `--skipFaaDb` once already on the device — it's ~500 MB on first sync)
+    * does not create the venv (see Installation steps above) or restart `standaloneRecorder.service`
 
 ### Workflow
 
