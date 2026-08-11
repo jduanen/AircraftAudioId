@@ -130,9 +130,19 @@ dmypy.json
 
 #### JDN Added
 data/ReleasableAircraft/
-dataset
+dataset/
+recordings/
+hold/
+inspect/
+checkpoints/
+.claude/
+.claude.bak/
+AircraftData_Backup
+bin/
+bad/
+datasets
+excludes/
+flagged_contamination.csv
 recordings
-hold
-inspect
-checkpoints
-.claude
+resume.txt
+setup.txt
