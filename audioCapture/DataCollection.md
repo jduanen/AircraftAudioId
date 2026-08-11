@@ -6,16 +6,21 @@ Documentation for the dataset capture and construction phase of AircraftAudioId.
 
 ## Overview
 
-The data collection system uses two machines:
-
-- **Pi Zero W** (`audiocap.lan`) — USB microphone capture, streams audio over TCP
-- **Ubuntu server** (`gpuServer1.lan`) — receives audio, polls ADS-B, detects flyovers, saves recordings
-
 After recording, the server exports a clip-level training dataset locally, then syncs to the DGX Spark for training.
+
+There are two configurations for how data is collected today.
+The first is known as the Local Data Collection System, that uses two machines -- a remote recording device and a server to handle the remaining functions required of the data collection system. This system is used to collect and process data within the reach of my WLAN.
+The second is known as the Standalone Data Collection System, which is intended to be used as a complete data collection system that can be placed in different locations, retreived at a later point in time, and its data harvested and added to my local system.
 
 ---
 
-## Hardware Setup
+## Local Data Collection System
+
+This system consists of two units:
+- **Pi Zero W** (`audiocap.lan`): USB microphone capture, streams audio over TCP
+- **Ubuntu server** (`gpuServer1.lan`): receives audio, polls ADS-B, detects flyovers, saves recordings
+
+The remote recording unit is connected to my WLAN and only captures and relays the audio to my server for further processing. Its clock is synced to that of the server, so that the audio samples can be properly correlated with the ADS-B data.
 
 | Component | Hardware | Role |
 |---|---|---|
@@ -24,9 +29,67 @@ After recording, the server exports a clip-level training dataset locally, then 
 | Recording server | Ubuntu workstation | Orchestration, storage |
 | Training machine | DGX Spark (`spark-8d0d.lan`) | Dataset export + model training |
 
+### Hardware
+
+* RPi0-2W
+  - added heat sink to RPi0-2W
+
+* Microphone and ADC
+  - Dayton Audio iMM-6C, USB-C calibrated microphone, 6mm condenser, CM6542
+  - omnidirectional
+  - Specs
+    * 18Hz-20kHz
+    * Max SPL: 120 dB (1% THD)
+    * SNR: 70 dBA
+  - Measurements
+    * Name: iMM-6C: USB Audio (hw:0,0)
+    * Noise floor: -68.9 dBFS (good)
+    * Self-noise: -71.0 dBFS (~26-30dBA equivalent - limits quiet measurements)
+    * Peak headroom: -55.7 dBFS (adequate)
+    * SNR: 23.0 dB (poor - might be measurement problem)
+    * MaxRate: 96000 Hz (good for wide-band analysis)
+    * Spectral flatness: 0.0003
+
+* 3D-printed enclosure
+  - images
+    ![](../assets/audioCapCase.jpg)
+    ![](../assets/audioCapInternal.jpg)
+    ![](../assets/audioCapExternal.jpg)
+  - CAD files: TBD
+    ![](../cad/top.3mf)
+    ![](../assets/top.png)
+    ![](../cad/bottom.3mf)
+    ![](../assets/bottom.png)
+
 ---
 
-## Step 1: Audio Capture (Pi Zero W)
+### Software
+
+????
+
+* OS: Trixie Lite
+  - packages: chrony, ????
+
+* Setup
+  - ????
+
+* Aircraft flyover audio capture program
+  - **`../scripts/capture.py`**: script to capture and stream audio from the RPi0-2W to the server
+    * options
+      - host:           IP address or hostname of the main recording machine/server
+      - port:           TCP port to connect to (defaults to 9876)
+      - deviceIndex:    sounddevice input device index (None = system default)
+      - sampleRate:     Capture sample rate in Hz (defaults to 44100)
+      - chunkFrames:    Number of audio frames per chunk sent over the wire (defaults to 4096)
+    * uses `src/aircraftAudio/audioStream/piCapture.py`
+    * writes sample chunks over persistent TCP connection
+      - format: <timeStamp> <chunkLength> <rawPCM_S16LE>
+
+????
+
+### Workflow
+
+#### Step 1: Audio Capture (Pi Zero W)
 
 **Script:** `scripts/capture.py` (runs on Pi Zero W)
 
@@ -52,7 +115,7 @@ timedatectl status
 
 ---
 
-## Step 2: Audio Buffering (Server)
+#### Step 2: Audio Buffering (Server)
 
 **Module:** `src/aircraftAudio/record/audioStream/remoteStream.py` — `RemoteAudioStream`
 
@@ -67,7 +130,7 @@ The buffer is always running; recordings are made by calling `getBuffer(duration
 
 ---
 
-## Step 3: ADS-B Monitoring (Server)
+#### Step 3: ADS-B Monitoring (Server)
 
 **Module:** `src/aircraftAudio/record/adsb/readsb.py` — `ReadsbClient`
 
@@ -87,7 +150,7 @@ Polls the readsb JSON endpoint (default: `http://adsbrx.lan/data/aircraft.json`)
 
 ---
 
-## Step 4: Flyover Detection and Recording
+#### Step 4: Flyover Detection and Recording
 
 **Module:** `src/aircraftAudio/record/recorder.py` — `AircraftRecordingSystem`
 
@@ -107,7 +170,7 @@ python scripts/record.py \
     [--postTriggerSecs 10]
 ```
 
-### Detection Logic
+##### Detection Logic
 
 The recorder tracks aircraft by ICAO24 hex code. For each aircraft:
 
@@ -120,18 +183,18 @@ The recorder tracks aircraft by ICAO24 hex code. For each aircraft:
 5. **Save gate** — before writing any file, `isStreamHealthy(durationSecs)` is called on the audio stream. If the Pi has not sent a PCM chunk within the last 3 seconds, or the stream has not been running long enough to have filled the required window with real audio, the recording is silently discarded with a `[skip]` log line.
 6. **Save** — triggered by window expiry or the aircraft leaving range (no state for 3 × poll interval)
 
-### Audio Duration
+##### Audio Duration
 
 The saved audio window spans the tracked state range plus a 2-second tail, capped at 55 seconds:
 ```
 durationSecs = clamp(stateSpan + 2.0, min=10.0, max=55.0)
 ```
 
-### Null (Background) Sampling
+##### Null (Background) Sampling
 
 When `--nullSampleInterval` is set, the recorder periodically saves a background clip when no aircraft are in range. Null clips capture ambient noise for the negative class in training. Default clip duration is 10 seconds; interval of 120–300 seconds is recommended.
 
-### Saved Files
+##### Saved Files
 
 Per flyover event, two files are written:
 
@@ -161,7 +224,7 @@ Each entry in `aircraftStates` includes: `icao24`, `callsign`, `latitude`, `long
 
 ---
 
-## Step 5: Dataset Inspection
+#### Step 5: Dataset Inspection
 
 **Script:** `scripts/inspectDataset.py`
 
@@ -184,7 +247,7 @@ python scripts/inspectDataset.py \
 
 ---
 
-## Step 6: Dataset Construction
+#### Step 6: Dataset Construction
 
 **Script:** `scripts/buildDataset.py`
 
@@ -206,7 +269,7 @@ python scripts/buildDataset.py \
     [--trainFrac 0.8]
 ```
 
-### Silent Recording Skip
+##### Silent Recording Skip
 
 Before processing a recording, `clipExport.py` reads the source WAV and checks
 `np.max(np.abs(audio)) < 1e-6`. If true, the entire recording is skipped — this
@@ -214,7 +277,7 @@ indicates the Pi was not streaming when the recorder saved the file (the circula
 buffer contained only its initial zero-fill). The final summary reports a count of
 skipped silent recordings separately from alignment failures.
 
-### Per-State Clip Extraction
+##### Per-State Clip Extraction
 
 For each recording, `clipExport.py` calls `align.py` to map every ADS-B state to its sample position in the WAV:
 
@@ -230,7 +293,7 @@ Clock correction priority (highest to lowest):
 
 A fixed-length clip (`clipSecs`, default 5 s) is extracted centred on each in-window state. States outside the audio window are skipped.
 
-### Filtering Options
+##### Filtering Options
 
 | Flag | Effect |
 |---|---|
@@ -239,7 +302,7 @@ A fixed-length clip (`clipSecs`, default 5 s) is extracted centred on each in-wi
 | `--maxCoTrackRatio` | Drop clips where any co-tracked aircraft is within (ratio × primary distance) |
 | `--dropUnknown` | Drop clips with no type label (null clips are kept regardless) |
 
-### Labels Written per Clip
+##### Labels Written per Clip
 
 | Column | Description |
 |---|---|
@@ -264,13 +327,13 @@ directionClass = floor((relativeDeg + 22.5) / 45) % 8
 ```
 This encodes Doppler geometry independent of compass orientation: 0° = flying directly away, 180° = flying directly toward, 90° = crossing left-to-right.
 
-### Aircraft Type Lookup
+##### Aircraft Type Lookup
 
 When `--faaDatabaseDir` is provided, type categories are resolved via ICAO24 lookup against the FAA ReleasableAircraft database. Without it, the system falls back to a keyword heuristic on the type string that misclassifies turboprop Pipers and similar variants. **Providing the FAA database is strongly recommended.**
 
 Download: `https://www.faa.gov/licenses_certificates/aircraft_certification/aircraft_registry/releasable_aircraft_download`
 
-### Train/Val Split
+##### Train/Val Split
 
 The split is done **by flyover event** (recording ID), not by clip, to prevent data leakage. Clips from the same flyover cannot appear in both train and val. The default split is 80/20 (`--trainFrac 0.8`).
 
@@ -282,7 +345,7 @@ After splitting, optional class balancing is applied to the **training set only*
 --balanceClasses --stratifyPhase
 ```
 
-### Output Files
+##### Output Files
 
 ```
 dataset/
@@ -296,7 +359,7 @@ dataset/
 
 ---
 
-## End-to-End Workflow
+### Details of the End-to-End Workflow
 
 ```bash
 # 1. Start audio capture on Pi Zero W
@@ -338,7 +401,7 @@ bash /home/jdn/Code/AircraftAudioId/scripts/trainDGX.sh --useCategories
 
 ---
 
-## Known Limitations and Gotchas
+### Known Limitations and Gotchas
 
 - **Pi clock drift** — The Pi Zero W has no hardware RTC. After reboot, the clock is wrong until NTP syncs (typically within 30–60 s). Start the capture script only after `timedatectl` confirms sync.
 - **Approach/departure imbalance** — The departure trigger fires when the aircraft starts leaving, so recordings naturally contain more approach states than departure states. The `--postTriggerSecs` window mitigates this, but recordings collected before this feature existed will have skewed phase distributions.
@@ -346,3 +409,13 @@ bash /home/jdn/Code/AircraftAudioId/scripts/trainDGX.sh --useCategories
 - **Unknown types** — Aircraft not in the FAA database (military, foreign-registered) get `type_categories=["unknown"]`. Use `--dropUnknown` to exclude these from training or accept them as a separate class.
 - **Old recordings** — Recordings made before `audioStartTime` and `clockSkewSecs` were added to the metadata cannot be aligned and are silently skipped by `buildDataset.py`. Use `--autoCorrectClock` as a best-effort fallback for recordings that have `audioStartTime` but no `clockSkewSecs`.
 - **Misaligned `audioStartTime` (pre-fix recordings)** — A circular-buffer signed-modulo bug in older versions of `remoteStream.py` caused `getBufferStartTime()` to return a value ~60 seconds too large roughly half the time, placing all ADS-B states far before the audio window. This bug is fixed in the current code. Recordings saved with the old code can be rescued with `--autoCorrectClock`, which re-estimates the start time from the ADS-B state timestamps rather than trusting the stored `audioStartTime`.
+
+## Standalone Data Collection System
+
+This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit, as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
+
+### Hardware
+
+### Software
+
+### Workflow
