@@ -2,10 +2,14 @@
 
 This is a research project to classify aircraft from audio recordings of flyovers, using synchronized ADS-B telemetry as ground truth. The goals of this project, in progression order, are: (1) classify aircraft type — propulsion (jet/turbine/piston), engine count, wing type (rotary/fixed); (2) classify direction of travel for single-aircraft clips; (3) estimate speed from audio; (4) handle clips with multiple simultaneous aircraft; (5) estimate additional attributes (distance, altitude, specific engine/airframe model).
 
-The pipeline spans three machines: a Raspberry Pi Zero 2W that streams microphone audio over TCP while an ADS-B receiver (Pi 4B running `readsb`) supplies aircraft telemetry; an Ubuntu server that fuses the two streams (using `record.py`), triggers recordings on detected flyovers, and builds a labeled clip dataset (`buildDataset.py`); a DGX Spark trains a ResNet-18-based multi-task model (vehicle type, direction, speed) on precomputed mel-spectrograms via Docker containers (using the `trainDGX.sh` and `evalDGX.sh` scripts).
+Audio capture uses one of two approaches, documented in [audioCapture/](./audioCapture):
+- **Local Data Collection System** ([details](./audioCapture/LocalDataCollection.md)): a Raspberry Pi Zero 2W streams microphone audio over TCP to an Ubuntu server, while an ADS-B receiver (Pi 4B running `readsb`) supplies aircraft telemetry; the server fuses the two streams (`record.py`), triggering recordings on detected flyovers. Used for collection within WLAN range.
+- **Standalone Data Collection System** ([details](./audioCapture/StandaloneDataCollection.md)): a sealed, self-contained CM4-based unit with its own microphone, ADS-B SDR dongle, and GPS receiver, run fully offline. Left unattended in the field for days to months, then retrieved and its data merged in. `standaloneRecord.py` reimplements the same flyover-detection/save logic locally, so its output is directory-compatible with the Local system's — no separate dataset tooling needed.
+
+Either way, the collected recordings feed `buildDataset.py` on the Ubuntu server, which builds a labeled clip dataset; a DGX Spark then trains a ResNet-18-based multi-task model (vehicle type, direction, speed) on precomputed mel-spectrograms via Docker containers (using the `trainDGX.sh` and `evalDGX.sh` scripts).
 
 See [docs/workflow.html](https://jduanen.github.io/AircraftAudioId/workflow.html) for the full workflow diagram.
-Below is a simplified schematic of the system.
+Below is a simplified schematic of the system, showing the Local capture path — see [StandaloneDataCollection.md](./audioCapture/StandaloneDataCollection.md) for how the Standalone path differs upstream of `record.py`/`buildDataset.py`.
 
 ```mermaid
 flowchart LR
@@ -31,10 +35,16 @@ flowchart LR
 
 See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for the hardware used to generate the ADS-B metadata this project's training data.
 
-### Flyover Audio Capture (RPi0-2W)
+### Flyover Audio Capture — Local System (RPi0-2W)
 
 * Raspberry Pi Zero 2W with USB-C microphone
-* see [Audio Capture Device](./audioCapture) for details
+* see [LocalDataCollection.md](./audioCapture/LocalDataCollection.md) for details
+
+### Flyover Audio Capture — Standalone System (CM4)
+
+* RasPi CM4 module on an Ochin baseboard, with the same USB-C microphone as the Local system, a FlightAware USB-SDR ADS-B dongle, a serial GPS receiver, and a GPIO-driven illuminated status LED
+* sealed, cast-aluminium enclosure; runs unattended and offline for days to months, then is physically retrieved
+* see [StandaloneDataCollection.md](./audioCapture/StandaloneDataCollection.md) for details
 
 ### ADS-B and Audio Processing (x86 Ubuntu Server w/ GPU)
 
@@ -55,10 +65,17 @@ The server is running Ubuntu on a deskside Intel CPU with 128GB of DRAM, and a G
 
 See my [ADS-B Receiver Monitor](https://github.com/jduanen/ADSBMonitor) repo for the software used to generate the ADS-B metadata this project's training data
 
-### Flyover Audio Capture (RPi Zero 2W)
+### Flyover Audio Capture — Local System (RPi Zero 2W)
 
 * the `scripts/capture.py` script captures audio samples from the microphone, packetizes them, and sends them over a socket to the `scripts/record.py` script running on the server
-* see [Audio Capture Device](./audioCapture) for details on the audio capture subsystem
+* see [LocalDataCollection.md](./audioCapture/LocalDataCollection.md) for details on the audio capture subsystem
+
+### Flyover Audio Capture — Standalone System (CM4)
+
+* `scripts/standaloneRecord.py` waits for a GPS fix, then runs the same flyover detection/save logic as `record.py` entirely on-device — a local `LocalAudioStream` (direct `sounddevice` capture, no TCP) and a locally-run `readsb`/`dump1090-fa` instance stand in for the Pi's TCP stream and the networked ADS-B endpoint
+* an offline FAA-registry lookup replaces the Local system's live OpenSky aircraft-type lookup, since this unit has no internet connection
+* a `gpiod`-controlled status LED and a disk-space guard are the only run-time indicators/safeguards for the unattended unit
+* see [StandaloneDataCollection.md](./audioCapture/StandaloneDataCollection.md) for details, including CM4 OS/hardware bring-up
 
 ### ADS-B and Audio Processing (x86 Ubuntu Server w/ GPU)
 
