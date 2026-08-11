@@ -1,6 +1,7 @@
 /*
  * Device Tree overlay: enable a uSD card socket wired to SPI1 on the CM4
- * daughtercard (see AudioCap2.txt "Enable uSD socket on SPI bus").
+ * daughtercard (see DataCollection.md "Standalone Data Collection System" ->
+ * "Installation" -> "Enable the micro-SD on the SPI Bus").
  *
  * Pinout:
  *   CS:   GPIO18, SPI1_CE0_N (GPIO-controlled, not hardware CE — mmc_spi

@@ -462,6 +462,46 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
   - `mkdir ~/bin`
   - `scp jdn@gpuServer1.lan:Code/linuxTools/scripts/{maxTemp,rssi,volts}.sh ~/bin/`
 
+##### Enable the status LED GPIO (see cm4-led-gpio.dts in this directory)
+
+* the LED is wired between the 3V3 pin on UART0/1 and RTS4 (USART4)
+  - one leg fixed high, the other pulled by this GPIO line, making it active-low
+  - StatusLed already sets LineSettings(active_low=True) to handle this
+* RTS4 is BCM GPIO11 on the Ochin baseboard, matching `--ledLine`'s default
+* `sudo apt install -y device-tree-compiler`
+* `dtc -@ -I dts -O dtb -o cm4-led-gpio.dtbo cm4-led-gpio.dts`
+* `sudo install -m 0644 cm4-led-gpio.dtbo /boot/firmware/overlays/cm4-led-gpio.dtbo`
+* add `dtoverlay=cm4-led-gpio` to `/boot/firmware/config.txt`
+* after reboot, confirm the line appears: `sudo gpiodetect` / `sudo gpioinfo gpiochip0`
+* sanity-check polarity with the LED itself before trusting it as a status indicator
+  - with `gpioset --active-low gpiochip0 <line>=1` the LED should light
+  - releasing the line (or process exit) should leave it however the pin floats at reset
+  - it is worth confirming this reads as "off"
+    * since a pin that defaults to driving low at boot would light the LED even with no software running, defeating the point of the off state
+
+##### Enable GPS PPS on CTS4 (USART4)
+
+* with RTS4 claimed by the status LED and USART4's TX/RX unused, CTS4 is free
+  - we repurpose it as the GPS receiver's PPS (pulse-per-second) input
+    * for tighter chrony time discipline than NMEA-only timing alone
+* unlike the status LED, this needs no custom overlay
+  - Linux already ships a stock `pps-gpio` overlay that turns any GPIO into a PPS source device
+* CTS4 is BCM GPIO10 on the Ochin baseboard schematic
+* add to `/boot/firmware/config.txt`:
+  - `dtoverlay=pps-gpio,gpiopin=10`
+* verify after reboot:
+  - `sudo apt install pps-tools`
+  - `ppstest /dev/pps0`  # should print a timestamp once per second
+* GPS PPS outputs are typically a 3.3V TTL pulse, directly compatible with a CM4 GPIO input
+  - this was confirmed against the GPS module's datasheet
+* the GPU module is a GT-UZ, and its pinout is:
+  - VCC: power input 3.3V
+  - GND: ground
+  - TXD: GPS serial data, defaults to NMEA and UBX responses
+  - RXD: (UBX/NMEA format) configuration commands from the host
+  - PPS: one pulse-per-second time reference
+* see "Set up GPS time discipline" below for wiring `/dev/pps0` into chrony via gpsd
+
 ##### Enable the micro-SD on the SPI Bus
 
 * describe the SPI SD socket in the device tree in the file 'cm4-sdspi.dts'
@@ -498,11 +538,69 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
       - this is a reasonable way to confirm the wiring and the card itself both work before trusting the custom overlay's DT syntax
         * worth doing first, since it isolates "is the hardware/wiring good" from "is my custom .dts correct"
 
+##### Install the Application Software on the Standalone Device
+
+* Create venv (first time only)
+  - `mkdir -p Code/AircraftAudioId/standaloneUnit`
+  - `cd Code/AircraftAudioId/standaloneUnit`
+  - `python3 -m venv venv`
+
+* Activate venv and install packages
+  - `source venv/bin/activate`
+  - `pip install -r requirements.txt`
+
 * Sync selected parts of host repo to the device
-  - **`../scripts/syncToStandalone.sh`**: run on the dev/recording machine, not the CM4
+  - **`../scripts/syncToStandalone.sh`**: run on the server, not the CM4
     * `bash scripts/syncToStandalone.sh <standalone-hostname-or-ip> [--skipFaaDb]`
     * syncs `src/aircraftAudio/`, `scripts/standaloneRecord.py`, `standaloneUnit/`, `audioCapture/cm4-sdspi.dts`, and `data/ReleasableAircraft/` (skip with `--skipFaaDb` once already on the device — it's ~500 MB on first sync)
     * does not create the venv (see Installation steps above) or restart `standaloneRecorder.service`
+
+* Set up local ADS-B capture (readsb/dump1090-fa against the FlightAware USB-SDR dongle)
+  - `sudo apt update`
+  - install readsb (or dump1090-fa -- either serves an aircraft.json endpoint)
+    * `sudo apt install readsb`
+  - configure it to read from the USB-SDR dongle and serve JSON on localhost
+    * edit `/etc/default/readsb` (package-dependent; confirm during bring-up):
+      - enable `--net`
+      - confirm the served aircraft.json path (commonly `/data/aircraft.json`)
+      - for a plain readsb install, or `/tar1090/data/aircraft.json` if tar1090 is also installed for a local web UI
+        * whichever it is, it must match `--readsbUrl` passed to `scripts/standaloneRecord.py` (`standaloneRecorder.service`'s default is `http://localhost/data/aircraft.json` -- update it to match once confirmed)
+  - enable and start service
+    * `sudo systemctl enable --now readsb`
+  - verify the service is running correctly
+    * `curl http://localhost/data/aircraft.json`
+
+* Set up GPS time discipline (gpsd + chrony, since this unit has no internet for NTP)
+  - `sudo apt install gpsd chrony`
+  - point gpsd at the GPS receiver's serial device
+    * `sudo ex /etc/default/gpsd`
+      - `DEVICES="/dev/ttyAMA3"`
+        * match whichever UART the GPS is wired to
+    * `sudo systemctl enable --now gpsd`
+  - verify raw NMEA output before wiring in GpsClient: `cat /dev/ttyAMA3`
+  - if the PPS overlay is enabled (see "Enable GPS PPS on CTS4" above), gpsd auto-detects `/dev/pps0` alongside the serial NMEA device and exposes a second, PPS-corrected SHM segment (SHM(1))
+    * this is in addition to the coarse NMEA-only one (SHM(0)); no extra gpsd config needed
+  - discipline chrony from gpsd's shared-memory (SHM) time reference
+    * `sudo systemctl stop systemd-timesyncd`
+    * `sudo systemctl disable systemd-timesyncd`
+    * `sudo ex /etc/chrony/chrony.conf`
+      - comment out default network pools (no internet on this unit)
+      - add: `refclock SHM 0 offset 0.0 delay 0.2 refid GPS` (coarse, from NMEA)
+      - if the PPS overlay is enabled, also add: `refclock SHM 1 offset 0.0 refid PPS precision 1e-7` (precise, PPS-disciplined)
+    * `sudo systemctl restart chronyd`
+  - check status
+    * `chronyc sources`
+    * `chronyc tracking`
+
+* install and enable the standaloneRecorder service
+  - `cd ${HOME}/Code/AircraftAudioId/standaloneUnit`
+  - `sudo cp etc/systemd/system/standaloneRecorder.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload`
+  - `sudo systemctl enable standaloneRecorder`
+  - `sudo systemctl start standaloneRecorder`
+  - `sudo journalctl -u standaloneRecorder -f`
+    ==> confirm this waits for/acquires a GPS fix, then starts recording
+
 
 ### Workflow
 
@@ -524,7 +622,7 @@ Same 6-method interface `RemoteAudioStream` provides to `AircraftRecordingSystem
 
 **Module:** `src/aircraftAudio/record/adsb/readsb.py` — `ReadsbClient` (unchanged from the Local system)
 
-Polls a `readsb`/`dump1090-fa` process running locally against the FlightAware USB-SDR dongle, serving its own `aircraft.json` on `localhost` (see `standaloneUnit/setup.txt` for the OS-level install). No code differs from the Local system — only the URL changes, from `adsbrx.lan` to `localhost`.
+Polls a `readsb`/`dump1090-fa` process running locally against the FlightAware USB-SDR dongle, serving its own `aircraft.json` on `localhost` (see "Installation" above for the OS-level install). No code differs from the Local system — only the URL changes, from `adsbrx.lan` to `localhost`.
 
 #### Step 4: Flyover Detection, Recording, and Health Gating
 
@@ -538,7 +636,7 @@ python scripts/standaloneRecord.py \
     --faaDatabaseDir /path/to/ReleasableAircraft \
     [--readsbUrl http://localhost/data/aircraft.json] \
     [--gpsPort /dev/ttyAMA3] [--gpsMinSatellites 4] \
-    [--ledChip gpiochip0] [--ledLine 17] \
+    [--ledChip gpiochip0] [--ledLine 11] \
     [--minFreeGb 2] \
     [--nullSampleInterval 210] [--nullSampleDuration 15]
 ```
@@ -563,5 +661,5 @@ python scripts/buildDataset.py \
     --maxDistanceKm 15 --dropUnknown --balanceClasses --stratifyPhase
 ```
 
-See `standaloneUnit/setup.txt` for CM4 OS bring-up (venv, local readsb/dump1090-fa install, GPS-disciplined `gpsd`+`chrony` time sync, the device-tree overlay exposing the status-LED GPIO line, and the `standaloneRecorder` systemd service).
+See "Installation" above for CM4 OS bring-up (venv, local readsb/dump1090-fa install, GPS-disciplined `gpsd`+`chrony` time sync, the device-tree overlay exposing the status-LED GPIO line, and the `standaloneRecorder` systemd service).
 

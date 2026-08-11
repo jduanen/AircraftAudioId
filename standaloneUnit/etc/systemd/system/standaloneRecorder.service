@@ -13,7 +13,7 @@ ExecStart=/home/jdn/Code/AircraftAudioId/standaloneUnit/venv/bin/python \
     --readsbUrl http://localhost/data/aircraft.json \
     --faaDatabaseDir /home/jdn/Code/AircraftAudioId/data/ReleasableAircraft \
     --gpsPort /dev/ttyAMA3 \
-    --ledChip gpiochip0 --ledLine 17 \
+    --ledChip gpiochip0 --ledLine 11 \
     --minFreeGb 2 \
     --nullSampleInterval 210 --nullSampleDuration 15
 Restart=on-failure

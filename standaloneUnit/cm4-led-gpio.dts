@@ -1,18 +1,21 @@
 /*
- * Device Tree overlay sketch: repurpose an unused UART's RTS/CTS pin as a
- * plain GPIO output, for the Standalone unit's status LED.
+ * Device Tree overlay: repurpose USART4's RTS pin (RTS4) as a plain GPIO
+ * output, for the Standalone unit's status LED.
  *
- * The GPS receiver occupies one of UART3/UART5 on the Ochin CM4 baseboard,
- * freeing up USART4's RTS4/CTS4 pins for other use. This overlay mux's the
- * chosen pin out of UART flow-control mode into plain GPIO output mode —
- * same pattern as cm4-sdspi.dts in audioCapture/AudioCap2.txt, which
- * repurposes GPIO18-21 from their default function for the SD-over-SPI
- * socket.
+ * Per DataCollection.md, the illuminated power switch's LED is wired
+ * between the 3V3 pin on UART0/1 (fixed high) and RTS4 — this overlay mux's
+ * RTS4 out of UART flow-control mode into plain GPIO output mode so
+ * StatusLed (src/aircraftAudio/standalone/statusLed.py) can drive it. Same
+ * pattern as audioCapture/cm4-sdspi.dts, which repurposes GPIO18-21 from
+ * their default function for the SD-over-SPI socket.
  *
- * brcm,pins is a PLACEHOLDER — the actual BCM GPIO number for RTS4/CTS4
- * on the Ochin baseboard needs to be confirmed against the CM4 schematic
- * during hardware bring-up (see ochin_CM4_topDoc.png), then StatusLed's
- * `--ledLine` should be set to match.
+ * The LED's polarity (active-low, since one leg is a fixed 3.3V rail) is
+ * handled in software via gpiod's LineSettings(active_low=True) in
+ * StatusLed, not here — this overlay only concerns pin muxing, not
+ * electrical polarity.
+ *
+ * RTS4 is BCM GPIO11 on the Ochin baseboard, matching StatusLed's
+ * --ledLine default.
  *
  * Compile and install (same as cm4-sdspi.dts):
  *   sudo apt install -y device-tree-compiler
@@ -32,7 +35,7 @@
         target = <&gpio>;
         __overlay__ {
             led_gpio_pins: led_gpio_pins {
-                brcm,pins = <TBD>;       /* BCM GPIO number for the freed RTS4/CTS4 pin */
+                brcm,pins = <11>;        /* RTS4 (USART4) */
                 brcm,function = <1>;     /* 1 = GPIO output */
             };
         };

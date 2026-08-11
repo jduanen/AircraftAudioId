@@ -33,7 +33,8 @@
 # standaloneRecorder.service's ExecStart paths and sys.path.insert(0, "src").
 #
 # This script only pushes files — it does not create the venv (see
-# standaloneUnit/setup.txt) or restart standaloneRecorder.service.
+# audioCapture/DataCollection.md "Standalone Data Collection System" ->
+# "Installation") or restart standaloneRecorder.service.
 
 set -euo pipefail
 

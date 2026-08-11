@@ -10,6 +10,14 @@ Behavior:
     off       = no power, or process not running — requires no software,
                 since nothing drives the pin in that state
 
+Wiring (per DataCollection.md): the illuminated power switch's LED sits
+between the 3V3 pin on UART0/1 and the RTS pin on USART4 (RTS4) — one leg
+fixed high, the other pulled by this GPIO line. That makes it active-low:
+driving the pin low sinks current and lights it, driving it high (matching
+the 3V3 leg) turns it off. LineSettings(active_low=True) below handles that
+inversion at the gpiod level, so setOk()/setError()/setOff() keep the usual
+on/off meaning regardless of the physical polarity.
+
 Targets the gpiod v2 (libgpiod 2.x) Python bindings, which is what
 `pip install gpiod` provides today and what Raspberry Pi OS Trixie ships.
 All actual gpiod calls are isolated in _setLine() so a version mismatch
@@ -26,13 +34,13 @@ class StatusLed:
     """
     Args:
         chip:               gpiod chip name (e.g. "gpiochip0").
-        line:                GPIO line offset driving the LED. Config value —
-                              the exact pin depends on the RTS/CTS-to-GPIO
-                              device-tree overlay wiring, not finalized yet.
+        line:                GPIO line offset driving the LED — RTS4 (USART4),
+                              BCM GPIO11 on the Ochin baseboard, muxed to
+                              plain GPIO by the cm4-led-gpio.dts overlay.
         blinkIntervalSecs:   Half-period of the error/starting-up blink pattern.
     """
 
-    def __init__(self, chip: str = "gpiochip0", line: int = 17, blinkIntervalSecs: float = 0.5):
+    def __init__(self, chip: str = "gpiochip0", line: int = 11, blinkIntervalSecs: float = 0.5):
         self.chip = chip
         self.line = line
         self.blinkIntervalSecs = blinkIntervalSecs
@@ -40,7 +48,9 @@ class StatusLed:
         self._request = gpiod.request_lines(
             f"/dev/{chip}",
             consumer="standaloneRecorder-statusLed",
-            config={line: gpiod.LineSettings(direction=Direction.OUTPUT, output_value=Value.INACTIVE)},
+            config={line: gpiod.LineSettings(
+                direction=Direction.OUTPUT, output_value=Value.INACTIVE, active_low=True,
+            )},
         )
         self._blinkThread: threading.Thread | None = None
         self._stopBlink = threading.Event()
@@ -63,7 +73,7 @@ class StatusLed:
         self._blinkThread.start()
 
     def setOff(self) -> None:
-        """Drive the line low. Used on clean shutdown."""
+        """Turn the LED off. Used on clean shutdown."""
         self._stopBlinking()
         self._setLine(False)
 

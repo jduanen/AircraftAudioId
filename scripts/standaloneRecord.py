@@ -9,7 +9,7 @@ Usage:
     python scripts/standaloneRecord.py --outputDir ./recordings \
         --faaDatabaseDir /path/to/ReleasableAircraft \
         [--readsbUrl http://localhost/data/aircraft.json] \
-        [--gpsPort /dev/ttyAMA3] [--ledChip gpiochip0 --ledLine 17]
+        [--gpsPort /dev/ttyAMA3] [--ledChip gpiochip0 --ledLine 11]
 
 Send SIGUSR1 to the running process to write a session summary snapshot
 (session_<timestamp>.json in outputDir) without stopping the recorder:
@@ -46,7 +46,7 @@ def main():
     p.add_argument("--gpsMinSatellites", type=int, default=4,
                    help="Minimum satellites required to accept a GPS fix")
     p.add_argument("--ledChip", type=str, default="gpiochip0", help="gpiod chip name for the status LED")
-    p.add_argument("--ledLine", type=int, default=17, help="GPIO line offset driving the status LED")
+    p.add_argument("--ledLine", type=int, default=11, help="GPIO line offset driving the status LED (RTS4)")
     p.add_argument("--ledBlinkIntervalSecs", type=float, default=0.5,
                    help="Half-period of the status LED's error/starting-up blink pattern")
     p.add_argument("--minFreeGb", type=float, default=2.0,

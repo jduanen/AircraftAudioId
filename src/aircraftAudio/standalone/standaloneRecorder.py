@@ -84,7 +84,7 @@ class StandaloneRecorder:
         gpsFixTimeoutSecs: Optional[float] = None,
         gpsMinSatellites: int = 4,
         ledChip: str = "gpiochip0",
-        ledLine: int = 17,
+        ledLine: int = 11,
         ledBlinkIntervalSecs: float = 0.5,
         minFreeBytes: int = 2 * 1024 ** 3,
         healthPollIntervalSecs: float = 2.0,
