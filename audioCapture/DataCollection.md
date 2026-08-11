@@ -9,7 +9,7 @@ Documentation for the dataset capture and construction phase of AircraftAudioId.
 After recording, the server exports a clip-level training dataset locally, then syncs to the DGX Spark for training.
 
 There are two configurations for how data is collected today.
-The first is known as the Local Data Collection System, that uses two machines -- a remote recording device and a server to handle the remaining functions required of the data collection system. This system is used to collect and process data within the reach of my WLAN.
+The first is known as the Local Data Collection System, that uses two machines -- a recording device and a server to handle the remaining functions required of the data collection system. This system is used to collect and process data within the reach of my WLAN.
 The second is known as the Standalone Data Collection System, which is intended to be used as a complete data collection system that can be placed in different locations, retreived at a later point in time, and its data harvested and added to my local system.
 
 ---
@@ -20,7 +20,7 @@ This system consists of two units:
 - **Pi Zero W** (`audiocap.lan`): USB microphone capture, streams audio over TCP
 - **Ubuntu server** (`gpuServer1.lan`): receives audio, polls ADS-B, detects flyovers, saves recordings
 
-The remote recording unit is connected to my WLAN and only captures and relays the audio to my server for further processing. Its clock is synced to that of the server, so that the audio samples can be properly correlated with the ADS-B data.
+The recording unit is connected to my WLAN and only captures and relays the audio to my server for further processing. Its clock is synced to that of the server, so that the audio samples can be properly correlated with the ADS-B data.
 
 | Component | Hardware | Role |
 |---|---|---|
@@ -72,6 +72,11 @@ The remote recording unit is connected to my WLAN and only captures and relays t
 
 * Setup
   - ????
+
+* RpiTelemetry
+  - ????
+
+* Install record service
 
 * Aircraft flyover audio capture program
   - **`../scripts/capture.py`**: script to capture and stream audio from the RPi0-2W to the server
@@ -412,10 +417,29 @@ bash /home/jdn/Code/AircraftAudioId/scripts/trainDGX.sh --useCategories
 
 ## Standalone Data Collection System
 
-This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit, as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
+This is a sealed, completely self-contained, data collection unit that can be left unattended (and not connected to the internet), for extended periods of time and then retrieved and the data harvested, post-processed, and added to the dataset.
+
+In addition the using the same microphone as used in the local system (to gather the audio clips), this system includes an ADS-B receiver and its associated antenna (used to provide ground truth for the audio samples), and a GPS receiver and antenna (used to get the location where the audio samples are made). There is also a WiFi radio and antenna that can be used to interact with the (normally-sealed) unit.
 
 ### Hardware
 
+This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit, as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
+
+The unit has a water-resistant power connector for the 12VDC (@?A) power supply required to operate the unit.
+
+The enslosure is a cast aluminium case that serves as a heat-sink for the CM4 module (and, if possible, the USB-SDR dongle).
+The three (ADS-B 1090MHz, WiFi, and GPS) antennas are mounted onto the enclosure in such a manner as to resist water infiltration.
+
 ### Software
 
+The software for this unit builds on that developed for the Local Data Collection system.
+
+The (software-controlled) illuminated power switch is the only indication that the unit provides that it is functioning correctly. It can signal correct operation by staying on continuously, and it can indicate something is wrong by blinking the switch's LED. If the LED is off, this indicates that the system either has no power, or has a hard failure and the sofware isn't running.
+
+It is expected that, in order to gather sufficient data, this unit will remain in a location for days to months at a time. This means that the unit must contain sufficient storage space to contain all of the samples and metadata generated before the unit is retreived and the information dumped.
+Also, because the unit uses the on-board GPS receiver to get the device's current location, all of the data collection functions that rely on location are fed from the GPS receiver, and changes in the device's location must be detected, so that the audio samples and their metadata can be saved, and the software elements restarted with the new location.
+
 ### Workflow
+
+**TBD**
+
