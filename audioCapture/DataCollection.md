@@ -434,12 +434,70 @@ The three (ADS-B 1090MHz, WiFi, and GPS) antennas are mounted onto the enclosure
 
 The software for this unit builds on that developed for the Local Data Collection system.
 
-The (software-controlled) illuminated power switch is the only indication that the unit provides that it is functioning correctly. It can signal correct operation by staying on continuously, and it can indicate something is wrong by blinking the switch's LED. If the LED is off, this indicates that the system either has no power, or has a hard failure and the sofware isn't running.
+The (software-controlled) illuminated power switch is the only indication that the unit provides that it is functioning correctly. It can signal correct operation by staying on continuously, and it can indicate something is wrong by blinking the switch's LED. If the LED is off, this indicates that the system either has no power, or has a hard failure and the sofware isn't running. In practice: solid on = healthy (GPS fix acquired, audio capturing, storage OK); blinking = starting up (still waiting for a GPS fix) or a software-detected problem (most commonly low storage); off = unpowered or crashed.
 
-It is expected that, in order to gather sufficient data, this unit will remain in a location for days to months at a time. This means that the unit must contain sufficient storage space to contain all of the samples and metadata generated before the unit is retreived and the information dumped.
-Also, because the unit uses the on-board GPS receiver to get the device's current location, all of the data collection functions that rely on location are fed from the GPS receiver, and changes in the device's location must be detected, so that the audio samples and their metadata can be saved, and the software elements restarted with the new location.
+It is expected that, in order to gather sufficient data, this unit will remain in a location for days to months at a time. This means that the unit must contain sufficient storage space to contain all of the samples and metadata generated before the unit is retreived and the information dumped. Once free storage drops below a threshold, new recordings are halted (never auto-deleted) and the LED switches to its error-blink pattern, signaling that the unit needs retrieval.
+
+Because the unit is moved by power-cycling it (there's no way to relocate a sealed, running unit), it reads its position from the on-board GPS receiver exactly once at startup — blocking until a fix is acquired — and uses that fixed position for the entire run. There is no runtime location-change detection or mid-run restart; a fresh fix is simply acquired the next time the unit boots.
 
 ### Workflow
 
-**TBD**
+The Standalone system reuses the Local system's `AircraftRecordingSystem` core (flyover trigger/save logic, `RecordingMetadata` schema) unchanged, injecting a local-capture audio stream and a local ADS-B client in place of the Pi's TCP stream and the networked readsb endpoint. This makes the retrieved data directory-compatible with the existing dataset tools with no changes.
+
+#### Step 1: GPS Fix (Startup)
+
+**Module:** `src/aircraftAudio/standalone/gps.py` — `GpsClient`
+
+Reads NMEA sentences (GGA/RMC) off the GPS receiver's serial UART and blocks until a valid fix with at least `--gpsMinSatellites` satellites is obtained. This fix's latitude/longitude become `observerLat`/`observerLon` for the entire run — see "Software" above for why there's no runtime re-acquisition.
+
+#### Step 2: Local Audio Capture
+
+**Module:** `src/aircraftAudio/record/audioStream/localStream.py` — `LocalAudioStream`
+
+Same 6-method interface `RemoteAudioStream` provides to `AircraftRecordingSystem` (`isStreamHealthy`, `getBuffer`, `getBufferStartTime`, `getClockSkewSecs`, etc.), but captures directly via `sounddevice.InputStream` on the CM4 itself — no TCP layer, since capture and recording run in the same process here. `getClockSkewSecs()` always returns `0.0`: audio and ADS-B polling share one wall clock, so there's no cross-machine skew to estimate.
+
+#### Step 3: Local ADS-B Monitoring
+
+**Module:** `src/aircraftAudio/record/adsb/readsb.py` — `ReadsbClient` (unchanged from the Local system)
+
+Polls a `readsb`/`dump1090-fa` process running locally against the FlightAware USB-SDR dongle, serving its own `aircraft.json` on `localhost` (see `standaloneUnit/setup.txt` for the OS-level install). No code differs from the Local system — only the URL changes, from `adsbrx.lan` to `localhost`.
+
+#### Step 4: Flyover Detection, Recording, and Health Gating
+
+**Module:** `src/aircraftAudio/standalone/standaloneRecorder.py` — `StandaloneRecorder`
+
+**Script:** `scripts/standaloneRecord.py` (run on the CM4)
+
+```bash
+python scripts/standaloneRecord.py \
+    --outputDir ./recordings \
+    --faaDatabaseDir /path/to/ReleasableAircraft \
+    [--readsbUrl http://localhost/data/aircraft.json] \
+    [--gpsPort /dev/ttyAMA3] [--gpsMinSatellites 4] \
+    [--ledChip gpiochip0] [--ledLine 17] \
+    [--minFreeGb 2] \
+    [--nullSampleInterval 210] [--nullSampleDuration 15]
+```
+
+`StandaloneRecorder.start()` acquires the GPS fix (Step 1), then constructs `LocalAudioStream`, `ReadsbClient`, a `StorageGuard` (halts saves below `--minFreeGb`), and an offline aircraft-type adapter backed by `FaaDatabase` (see below), and injects all four into `AircraftRecordingSystem` — the same trigger/save/null-sampling logic documented under the Local system's Step 4 applies unchanged. `--faaDatabaseDir` is **required** here (unlike the Local system's `record.py`): without it, aircraft-type lookups would fall back to a live OpenSky HTTPS call, which stalls on every save on this unit's air-gapped network.
+
+A background health-loop thread polls `audioStream.isStreamHealthy()` and `storageGuard.hasSpace()` and drives the status LED (`src/aircraftAudio/standalone/statusLed.py` — `StatusLed`, `gpiod`-controlled) accordingly: solid while both are healthy, blinking otherwise (including during the Step 1 GPS-fix wait).
+
+Sending `SIGUSR1` to the running process writes a session summary snapshot, same as the Local system.
+
+#### Step 5: Retrieval and Dataset Construction
+
+Once physically retrieved, the unit's storage contains the same `recordings/audio/<id>.wav` + `recordings/metadata/<id>.json` layout the Local system produces. **No new tooling is needed** — run the existing Local-system scripts directly against the retrieved directory:
+
+```bash
+python scripts/inspectDataset.py --recordingsDir /path/to/retrieved/recordings
+
+python scripts/buildDataset.py \
+    --recordingsDir /path/to/retrieved/recordings \
+    --outputDir ./dataset \
+    --faaDatabaseDir /path/to/ReleasableAircraft \
+    --maxDistanceKm 15 --dropUnknown --balanceClasses --stratifyPhase
+```
+
+See `standaloneUnit/setup.txt` for CM4 OS bring-up (venv, local readsb/dump1090-fa install, GPS-disciplined `gpsd`+`chrony` time sync, the device-tree overlay exposing the status-LED GPIO line, and the `standaloneRecorder` systemd service).
 

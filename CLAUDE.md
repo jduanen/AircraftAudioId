@@ -18,16 +18,23 @@ Ground truth labels come from synchronized ADS-B telemetry data captured alongsi
 The codebase has two layers:
 
 **`src/aircraftAudio/` — structured package (active development)**
-- `record/recorder.py` — `AircraftRecordingSystem`: top-level orchestrator; coordinates ADS-B monitoring and audio buffering; triggers and saves recordings when a flyover is detected; skips saves when `isStreamHealthy()` returns false
+- `record/recorder.py` — `AircraftRecordingSystem`: top-level orchestrator; coordinates ADS-B monitoring and audio buffering; triggers and saves recordings when a flyover is detected; skips saves when `isStreamHealthy()` returns false or (if a `storageGuard` is set) when `StorageGuard.hasSpace()` returns false. Its ADS-B client, audio stream, and aircraft-type lookup are all optionally injectable (`adsbClient`/`audioStream`/`typeDb` constructor args, each duck-typed) — defaults to `ReadsbClient`/`RemoteAudioStream`/`AircraftDatabase` when omitted, which is what the Local system uses; the Standalone unit (see `standalone/`) injects `ReadsbClient` pointed at localhost, `LocalAudioStream`, and an offline `FaaDatabase`-backed adapter instead
+- `record/storageGuard.py` — `StorageGuard`: checks free disk space against a threshold; used to halt new recordings before an unattended unit's storage fills up
+- `record/audioStream/localStream.py` — `LocalAudioStream`: same 6-method interface as `RemoteAudioStream`, but captures directly via `sounddevice.InputStream` on the same machine that runs the recorder (no TCP layer) — used by the Standalone unit
 - `record/adsb/readsb.py` — `ReadsbClient`: polls a readsb/dump1090 JSON endpoint; returns `AircraftState` objects filtered by radius and altitude
 - `record/audioStream/remoteStream.py` — `RemoteAudioStream`: TCP server that receives PCM chunks from the Pi and maintains a 60-second circular buffer; `isStreamHealthy(durationSecs)` gates recordings on active chunk delivery
 - `record/aircraftType.py` — `AircraftDatabase`: looks up aircraft type strings from ICAO24 hex codes
 - `capture/piCapture.py` — `PiCapture`: runs on the Pi Zero W; captures USB mic audio and streams it over TCP
 - `capture/micEval.py` — `evaluateDevices`: measures noise floor, SNR, and frequency response of attached mic/ADC devices
 - `dataset/clipExport.py` — `buildClipDataset`: aligns ADS-B states to audio, extracts clips, writes train/val CSVs; skips silent source WAVs (Pi not streaming)
+- `dataset/faaDatabase.py` — `FaaDatabase`: fully offline ICAO24→category/model lookup from a local unzipped FAA ReleasableAircraft download; used both by `buildDataset.py` and (via an adapter) by the Standalone unit's `typeDb`
+- `standalone/gps.py` — `GpsClient`/`GpsFix`: reads NMEA sentences off a serial GPS receiver; `waitForFix()` blocks until a valid fix. The Standalone unit reads location exactly once at startup — no runtime location-change detection (relocating the unit requires a power cycle)
+- `standalone/statusLed.py` — `StatusLed`: `gpiod`-controlled illuminated power-switch LED for the Standalone unit; `setOk()` (solid), `setError()` (blink — also used while starting up/waiting for GPS), `setOff()`
+- `standalone/standaloneRecorder.py` — `StandaloneRecorder`: orchestrates the Standalone unit — waits for a GPS fix, then wires `LocalAudioStream` + `ReadsbClient` (pointed at a local readsb/dump1090-fa instance) + an offline `FaaDatabase`-backed `typeDb` + `StorageGuard` + `StatusLed` around `AircraftRecordingSystem`
 **`scripts/` — server-side entry points**
 - `record.py` — run on the Ubuntu server; starts `AircraftRecordingSystem`
 - `buildDataset.py` — run on the Ubuntu server; extracts clips and writes `train.csv` / `val.csv`
+- `standaloneRecord.py` — run on the Standalone unit (CM4); starts `StandaloneRecorder`
 **`audioCapture/scripts/` — Pi-side entry points**
 - `capture.py` — run on the Pi Zero W; starts `PiCapture`
 

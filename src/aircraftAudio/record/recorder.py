@@ -85,6 +85,22 @@ class AircraftRecordingSystem:
         sampleRate:        Audio sample rate (must match Pi capture setting).
         listenPort:        TCP port to receive audio from the Pi.
         readsbUrl:         URL of the readsb JSON endpoint.
+        adsbClient:        Pre-built ADS-B client (must implement getAircraft(...)).
+                            Defaults to a ReadsbClient built from readsbUrl. Used by
+                            the Standalone unit to point at a locally-run readsb
+                            instance without changing this class.
+        audioStream:       Pre-built audio stream (must implement the 6-method
+                            interface RemoteAudioStream provides: start, stop,
+                            isConnected, isStreamHealthy, getBuffer,
+                            getBufferStartTime, getClockSkewSecs). Defaults to a
+                            RemoteAudioStream listening on listenPort. Used by the
+                            Standalone unit to inject LocalAudioStream instead.
+        typeDb:            Pre-built aircraft-type lookup (must implement
+                            getAircraftType(icao24)). Defaults to AircraftDatabase
+                            (live OpenSky lookup). Used by the Standalone unit to
+                            inject an offline FaaDatabase-backed adapter instead.
+        storageGuard:      Optional StorageGuard. When given, saves are skipped
+                            once storageGuard.hasSpace() returns False.
     """
 
     def __init__(
@@ -106,6 +122,10 @@ class AircraftRecordingSystem:
         datasetCsv: Optional[Path] = None,
         maxSamplesPerClass: Optional[int] = None,
         dropUnknown: bool = False,
+        adsbClient: Optional[object] = None,
+        audioStream: Optional[object] = None,
+        typeDb: Optional[object] = None,
+        storageGuard: Optional[object] = None,
     ):
         self.observerLat = observerLat
         self.observerLon = observerLon
@@ -124,17 +144,18 @@ class AircraftRecordingSystem:
         self.audioDir.mkdir(parents=True, exist_ok=True)
         self.metadataDir.mkdir(parents=True, exist_ok=True)
 
-        self.adsbClient = ReadsbClient(
+        self.adsbClient = adsbClient if adsbClient is not None else ReadsbClient(
             observerLat=observerLat,
             observerLon=observerLon,
             url=readsbUrl,
             pollIntervalSecs=POLL_INTERVAL_SECS,
         )
-        self.audioStream = RemoteAudioStream(
+        self.audioStream = audioStream if audioStream is not None else RemoteAudioStream(
             port=listenPort,
             sampleRate=sampleRate,
         )
-        self.typeDb = AircraftDatabase()
+        self.typeDb = typeDb if typeDb is not None else AircraftDatabase()
+        self.storageGuard = storageGuard
 
         # icao24 → list of state dicts (from asdict(AircraftState))
         self._trackedAircraft: dict[str, list[dict]] = {}
@@ -351,6 +372,10 @@ class AircraftRecordingSystem:
                     self._lastNullSampleTime = now
 
     def _saveNullRecording(self) -> None:
+        if self.storageGuard is not None and not self.storageGuard.hasSpace():
+            print("  [skip] null sample — low disk space, discarding recording")
+            return
+
         audio = self.audioStream.getBuffer(self.nullSampleDurationSecs)
         audioStartTime = self.audioStream.getBufferStartTime(self.nullSampleDurationSecs)
         clockSkewSecs = self.audioStream.getClockSkewSecs()
@@ -393,6 +418,11 @@ class AircraftRecordingSystem:
         if not self.audioStream.isStreamHealthy(durationSecs):
             callsign = states[0].get("callsign") or icao24
             print(f"  [skip] {callsign} — audio stream not delivering data, discarding recording")
+            return
+
+        if self.storageGuard is not None and not self.storageGuard.hasSpace():
+            callsign = states[0].get("callsign") or icao24
+            print(f"  [skip] {callsign} — low disk space, discarding recording")
             return
 
         audio = self.audioStream.getBuffer(durationSecs)
