@@ -57,13 +57,22 @@ OPTS="-avz --progress"
 
 echo "Syncing to ${STANDALONE_HOST}:/home/jdn/Code/AircraftAudioId/ ..."
 
+# Remote rsync only creates one missing destination directory level, not the
+# full parent chain — on a fresh host (nothing under ~/Code/ yet) that fails
+# with "mkdir ... No such file or directory". Create the full tree upfront.
+ssh "jdn@${STANDALONE_HOST}" "mkdir -p \
+    /home/jdn/Code/AircraftAudioId/src/aircraftAudio \
+    /home/jdn/Code/AircraftAudioId/scripts \
+    /home/jdn/Code/AircraftAudioId/standaloneUnit \
+    /home/jdn/Code/AircraftAudioId/audioCapture \
+    /home/jdn/Code/AircraftAudioId/data/ReleasableAircraft"
+
 rsync ${OPTS} \
     --exclude='__pycache__/' \
     --exclude='*.pyc' \
     "${PROJECT_ROOT}/src/aircraftAudio/" \
     "${REMOTE_ROOT}/src/aircraftAudio/"
 
-ssh "jdn@${STANDALONE_HOST}" "mkdir -p /home/jdn/Code/AircraftAudioId/scripts"
 rsync ${OPTS} \
     "${PROJECT_ROOT}/scripts/standaloneRecord.py" \
     "${REMOTE_ROOT}/scripts/standaloneRecord.py"
@@ -72,7 +81,6 @@ rsync ${OPTS} \
     "${PROJECT_ROOT}/standaloneUnit/" \
     "${REMOTE_ROOT}/standaloneUnit/"
 
-ssh "jdn@${STANDALONE_HOST}" "mkdir -p /home/jdn/Code/AircraftAudioId/audioCapture"
 rsync ${OPTS} \
     "${PROJECT_ROOT}/audioCapture/cm4-sdspi.dts" \
     "${REMOTE_ROOT}/audioCapture/cm4-sdspi.dts"
