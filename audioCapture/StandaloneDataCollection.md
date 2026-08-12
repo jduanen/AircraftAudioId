@@ -93,7 +93,7 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
 
 #### Enable the micro-SD on the SPI Bus
 
-* describe the SPI SD socket in the device tree in the file 'cm4-sdspi.dts' (audioCapture/cm4-sdspi.dts)
+* describe the SPI SD socket in the device tree in the file 'cm4-sdspi.dts' (standaloneUnit/cm4-sdspi.dts)
   - create Device Tree overlay for the SPI bus and CS wired to the socket
     * SPI_0, CE_1, 3.3V-only, no card-detect switch
     * CS: GPIO18, SPI1_CE0_N
@@ -165,7 +165,7 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
 * Sync selected parts of host repo to the device
   - **`../scripts/syncToStandalone.sh`**: run on the server, not the CM4
     * `bash scripts/syncToStandalone.sh <standalone-hostname-or-ip> [--skipFaaDb]`
-    * syncs `src/aircraftAudio/`, `scripts/standaloneRecord.py`, `standaloneUnit/`, `audioCapture/cm4-sdspi.dts`, and `data/ReleasableAircraft/` (skip with `--skipFaaDb` once already on the device — it's ~500 MB on first sync)
+    * syncs `src/aircraftAudio/`, `scripts/standaloneRecord.py`, `standaloneUnit/` (including `cm4-sdspi.dts`/`cm4-led-gpio.dts`), and `data/ReleasableAircraft/` (skip with `--skipFaaDb` once already on the device — it's ~500 MB on first sync)
     * does not create the venv (see Installation steps above) or restart `standaloneRecorder.service`
 
 * Set up local ADS-B capture (readsb/dump1090-fa against the FlightAware USB-SDR dongle)

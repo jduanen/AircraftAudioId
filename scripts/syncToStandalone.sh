@@ -13,8 +13,7 @@
 #                               ..dataset.faaDatabase) never break.
 #   scripts/standaloneRecord.py — the one entry point this unit runs.
 #   standaloneUnit/           — requirements.txt, systemd service,
-#                               cm4-led-gpio.dts
-#   audioCapture/cm4-sdspi.dts — SD-over-SPI overlay, needed for bring-up
+#                               cm4-led-gpio.dts, cm4-sdspi.dts
 #   data/ReleasableAircraft/  — offline FAA registry; --faaDatabaseDir is
 #                               required for StandaloneRecorder. ~500 MB on
 #                               first sync, incremental after. Skip with
@@ -64,7 +63,6 @@ ssh "jdn@${STANDALONE_HOST}" "mkdir -p \
     /home/jdn/Code/AircraftAudioId/src/aircraftAudio \
     /home/jdn/Code/AircraftAudioId/scripts \
     /home/jdn/Code/AircraftAudioId/standaloneUnit \
-    /home/jdn/Code/AircraftAudioId/audioCapture \
     /home/jdn/Code/AircraftAudioId/data/ReleasableAircraft"
 
 rsync ${OPTS} \
@@ -80,10 +78,6 @@ rsync ${OPTS} \
 rsync ${OPTS} \
     "${PROJECT_ROOT}/standaloneUnit/" \
     "${REMOTE_ROOT}/standaloneUnit/"
-
-rsync ${OPTS} \
-    "${PROJECT_ROOT}/audioCapture/cm4-sdspi.dts" \
-    "${REMOTE_ROOT}/audioCapture/cm4-sdspi.dts"
 
 if [[ "${SKIP_FAA_DB}" == false ]]; then
     rsync ${OPTS} \

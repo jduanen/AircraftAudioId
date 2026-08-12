@@ -6,7 +6,7 @@
  * between the 3V3 pin on UART0/1 (fixed high) and RTS4 — this overlay mux's
  * RTS4 out of UART flow-control mode into plain GPIO output mode so
  * StatusLed (src/aircraftAudio/standalone/statusLed.py) can drive it. Same
- * pattern as audioCapture/cm4-sdspi.dts, which repurposes GPIO18-21 from
+ * pattern as cm4-sdspi.dts (this directory), which repurposes GPIO18-21 from
  * their default function for the SD-over-SPI socket.
  *
  * The LED's polarity (active-low, since one leg is a fixed 3.3V rail) is
