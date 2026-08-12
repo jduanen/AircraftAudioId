@@ -2,7 +2,7 @@
  * Device Tree overlay: repurpose USART4's RTS pin (RTS4) as a plain GPIO
  * output, for the Standalone unit's status LED.
  *
- * Per DataCollection.md, the illuminated power switch's LED is wired
+ * Per audioCapture/StandaloneDataCollection.md, the illuminated power switch's LED is wired
  * between the 3V3 pin on UART0/1 (fixed high) and RTS4 — this overlay mux's
  * RTS4 out of UART flow-control mode into plain GPIO output mode so
  * StatusLed (src/aircraftAudio/standalone/statusLed.py) can drive it. Same

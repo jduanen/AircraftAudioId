@@ -10,7 +10,7 @@ Behavior:
     off       = no power, or process not running — requires no software,
                 since nothing drives the pin in that state
 
-Wiring (per DataCollection.md): the illuminated power switch's LED sits
+Wiring (per audioCapture/StandaloneDataCollection.md): the illuminated power switch's LED sits
 between the 3V3 pin on UART0/1 and the RTS pin on USART4 (RTS4) — one leg
 fixed high, the other pulled by this GPIO line. That makes it active-low:
 driving the pin low sinks current and lights it, driving it high (matching

@@ -12,7 +12,7 @@
 #                               internal imports (e.g. standaloneRecorder.py's
 #                               ..dataset.faaDatabase) never break.
 #   scripts/standaloneRecord.py — the one entry point this unit runs.
-#   standaloneUnit/           — requirements.txt, systemd service, setup.txt,
+#   standaloneUnit/           — requirements.txt, systemd service,
 #                               cm4-led-gpio.dts
 #   audioCapture/cm4-sdspi.dts — SD-over-SPI overlay, needed for bring-up
 #   data/ReleasableAircraft/  — offline FAA registry; --faaDatabaseDir is
@@ -33,8 +33,8 @@
 # standaloneRecorder.service's ExecStart paths and sys.path.insert(0, "src").
 #
 # This script only pushes files — it does not create the venv (see
-# audioCapture/DataCollection.md "Standalone Data Collection System" ->
-# "Installation") or restart standaloneRecorder.service.
+# audioCapture/StandaloneDataCollection.md "Installation") or restart
+# standaloneRecorder.service.
 
 set -euo pipefail
 
