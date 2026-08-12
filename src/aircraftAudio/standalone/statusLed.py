@@ -18,10 +18,10 @@ the 3V3 leg) turns it off. LineSettings(active_low=True) below handles that
 inversion at the gpiod level, so setOk()/setError()/setOff() keep the usual
 on/off meaning regardless of the physical polarity.
 
-Targets the gpiod v2 (libgpiod 2.x) Python bindings, which is what
-`pip install gpiod` provides today and what Raspberry Pi OS Trixie ships.
-All actual gpiod calls are isolated in _setLine() so a version mismatch
-discovered during hardware bring-up only requires touching one method.
+Targets the gpiod v2 (libgpiod 2.x) Python bindings — confirmed as v2.2.1 on
+the standalone unit's Trixie image (`python3 -c "import gpiod; print(gpiod.api_version)"`).
+All actual gpiod calls are isolated in _setLine() so any future API-version
+change only requires touching one method.
 """
 
 import threading
