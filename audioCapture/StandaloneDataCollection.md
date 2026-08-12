@@ -217,24 +217,42 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
   - `enable_uart=1` in `/boot/firmware/config.txt` is enough to bring up this UART — no additional `dtoverlay=uartN` needed, since it's the SoC's primary UART
   - use `/dev/serial0` rather than a specific `ttyAMA*`/`ttyS0` name: the firmware/udev symlink `/dev/serial0` always points at whichever device is actually the primary UART, which otherwise depends on Bluetooth presence/config
   - `sudo apt install gpsd chrony`
-  - point gpsd at the GPS receiver's serial device
+  - **give `/dev/pps0` read/write group access** — it's created `root:root 660` by default, and gpsd's service account can't open it otherwise (silently — no error, PPS just never links):
+    * `sudo tee /etc/udev/rules.d/99-pps.rules <<< 'SUBSYSTEM=="pps", GROUP="dialout", MODE="0660"'`
+    * `sudo udevadm control --reload-rules && sudo udevadm trigger`
+    * `gpsd`'s system user is already in `dialout` (needed for `/dev/serial0`), so no separate group-membership step is needed
+  - **point gpsd at both the serial device and the PPS device explicitly** — they're electrically/logically unrelated (unlike a USB GPS dongle where both come through one device the kernel can auto-link), so gpsd has no way to know they belong to the same physical unit unless told:
     * `sudo ex /etc/default/gpsd`
-      - `DEVICES="/dev/serial0"`
-    * `sudo systemctl enable --now gpsd`
+      - `DEVICES="/dev/serial0 /dev/pps0"` (serial device first — gpsd links a bare `/dev/pps*` entry to the most recently opened serial device)
+      - `GPSD_OPTIONS="-n"` (poll immediately at startup rather than waiting for a client to connect — see below for why that matters here)
+  - **bypass gpsd's socket activation** — Debian's `gpsd.socket`/`gpsd.service` pair only starts the actual daemon on-demand when a client connects to gpsd's own protocol port. Nothing in this system ever does that (`GpsClient` reads `/dev/serial0` directly, bypassing gpsd entirely — gpsd here exists solely for the chrony SHM bridge), so left as shipped, gpsd would sit dormant and never poll the device at all:
+    * `sudo systemctl disable --now gpsd.socket`
+    * `sudo systemctl enable --now gpsd.service`
   - verify raw NMEA output before wiring in GpsClient: `cat /dev/serial0`
-  - if the PPS overlay is enabled (see "Enable GPS PPS on CTS4" above), gpsd auto-detects `/dev/pps0` alongside the serial NMEA device and exposes a second, PPS-corrected SHM segment (SHM(1))
-    * this is in addition to the coarse NMEA-only one (SHM(0)); no extra gpsd config needed
+  - **confirmed SHM unit mapping** (verified via `gpsd -N -D5 -n /dev/serial0 /dev/pps0`, watching `journalctl -u gpsd` for `ntpshm_put` lines — do not assume the "obvious" numbering, verify it on the actual hardware/gpsd version, since it wasn't what gpsd's own allocation-time log first suggested):
+    * `SHM(0)` — coarse time from `/dev/serial0`'s NMEA sentences, updated once/sec
+    * `SHM(1)` — allocated but unused once `/dev/pps0` is given as its own separate device (this is gpsd's *default* pairing for a serial-only setup with no external PPS device; giving it one explicitly redirects the real PPS data elsewhere, per the next line)
+    * `SHM(2)` — the real hardware PPS assertions from `/dev/pps0`, confirmed via repeating `ntpshm_put(NTP2, ...) /dev/pps0 ... accepted` log lines once/sec
   - discipline chrony from gpsd's shared-memory (SHM) time reference
     * `sudo systemctl stop systemd-timesyncd`
     * `sudo systemctl disable systemd-timesyncd`
     * `sudo ex /etc/chrony/chrony.conf`
       - comment out default network pools (no internet on this unit)
       - add: `refclock SHM 0 offset 0.0 delay 0.2 refid GPS` (coarse, from NMEA)
-      - if the PPS overlay is enabled, also add: `refclock SHM 1 offset 0.0 refid PPS precision 1e-7` (precise, PPS-disciplined)
+      - add: `refclock SHM 2 offset 0.0 refid PPS precision 1e-7` (precise, PPS-disciplined — **not `SHM 1`**, see mapping above)
+    * `sudo systemctl restart chronyd`
+  - **`SHM(0)` needs a capability grant to be readable at all** — gpsd hard-codes `SHM(0)`/`SHM(1)` as `root:root 0600` by design (reserved for a co-resident *root*-privileged consumer, historically old-style `ntpd`); chrony deliberately drops root privileges and can't read a `0600` root-owned segment through any `chrony.conf` setting. `SHM(2)` and up are `0666` (world-readable) so don't need this, but the `GPS`/`SHM(0)` line does:
+    * `sudo systemctl edit chronyd`
+    * add:
+      ```
+      [Service]
+      AmbientCapabilities=CAP_IPC_OWNER
+      ```
     * `sudo systemctl restart chronyd`
   - check status
-    * `chronyc sources`
+    * `chronyc sources` — both `GPS` and `PPS` should show climbing `Reach` (nonzero) within a few poll cycles once the GPS has a satellite fix
     * `chronyc tracking`
+  - if `GPSD_OPTIONS` was temporarily set to `-n -D5` for debugging via `journalctl -u gpsd`, remove the `-D5` afterward and restart gpsd — no reason to run an unattended field unit at debug log verbosity indefinitely
 
 * install and enable the standaloneRecorder service
   - `cd ${HOME}/Code/AircraftAudioId/standaloneUnit`
