@@ -63,10 +63,10 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
 * add `dtoverlay=cm4-led-gpio` to `/boot/firmware/config.txt`
 * after reboot, confirm the line appears: `sudo gpiodetect` / `sudo gpioinfo gpiochip0`
 * sanity-check polarity with the LED itself before trusting it as a status indicator
-  - with `gpioset --active-low gpiochip0 <line>=1` the LED should light
-  - releasing the line (or process exit) should leave it however the pin floats at reset
-  - it is worth confirming this reads as "off"
-    * since a pin that defaults to driving low at boot would light the LED even with no software running, defeating the point of the off state
+  - **confirmed:** `sudo gpioset --active-low -c gpiochip0 11=1` lights the LED — verifies the RTS4/3V3 wiring and active-low polarity match `StatusLed`'s `LineSettings(active_low=True)`
+  - **found:** releasing a driven GPIO line on the BCM2711 does *not* return it to floating — the pin keeps driving its last-set level until explicitly changed or the board is power-cycled (confirmed: `Ctrl-C` on `gpioset ...11=1` left the LED on; `Ctrl-C` on `...11=0` left it off). This means "off" only reliably means "never touched since boot" — a hard crash (`SIGKILL`, panic) after the LED has been driven can leave it stuck in whatever state it was last in, not necessarily off
+    * mitigated: `scripts/standaloneRecord.py` now converts `SIGTERM` (what `systemd stop`/`restart` sends) into the same graceful-shutdown path `Ctrl-C` already used, so the LED is explicitly driven off on any orderly stop — confirmed via a mocked-GPIO test that this runs even if `SIGTERM` arrives mid-startup (before the main recording loop)
+    * still open: this doesn't cover `SIGKILL`/kernel panics/hangs — a systemd watchdog (`WatchdogSec=` + periodic `sd_notify` from the health-loop thread) would close that gap but hasn't been added yet
 
 #### Enable GPS PPS on CTS4 (USART4)
 
