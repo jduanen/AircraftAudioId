@@ -158,6 +158,11 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
   - `cd Code/AircraftAudioId/standaloneUnit`
   - `python3 -m venv venv`
 
+* Install the native PortAudio library (sounddevice's pip package is only a
+  ctypes wrapper around it — without this, `import sounddevice` fails with
+  `OSError: PortAudio library not found`)
+  - `sudo apt install libportaudio2`
+
 * Activate venv and install packages
   - `source venv/bin/activate`
   - `pip install -r requirements.txt`
@@ -170,18 +175,42 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
 
 * Set up local ADS-B capture (readsb/dump1090-fa against the FlightAware USB-SDR dongle)
   - `sudo apt update`
-  - install readsb (or dump1090-fa -- either serves an aircraft.json endpoint)
-    * `sudo apt install readsb`
-  - configure it to read from the USB-SDR dongle and serve JSON on localhost
-    * edit `/etc/default/readsb` (package-dependent; confirm during bring-up):
-      - enable `--net`
-      - confirm the served aircraft.json path (commonly `/data/aircraft.json`)
-      - for a plain readsb install, or `/tar1090/data/aircraft.json` if tar1090 is also installed for a local web UI
-        * whichever it is, it must match `--readsbUrl` passed to `scripts/standaloneRecord.py` (`standaloneRecorder.service`'s default is `http://localhost/data/aircraft.json` -- update it to match once confirmed)
+  - **`sudo apt install readsb` is not enough on this image** — confirmed on hardware: the generic Trixie-archive package is compiled *without* RTL-SDR support at all. `readsb --device-type rtlsdr ...` fails immediately with `SDR type '0' not recognized`, and the SDR types listed in `readsb --help` (`modesbeast`, `gnshulc`, `ifile`, `none`) don't include `rtlsdr` — the package wasn't built against `librtlsdr`. FlightAware's own apt repo builds `readsb`/`dump1090-fa` with RTL-SDR support baked in (that's their whole product line), but as of this bring-up it doesn't yet have Trixie (Debian 13) packages published:
+    * `wget https://flightaware.com/adsb/piaware/files/packages/pool/piaware/f/flightaware-apt-repository/flightaware-apt-repository_1.2_all.deb`
+    * `sudo dpkg -i flightaware-apt-repository_1.2_all.deb && sudo apt update`
+    * if this has a Trixie package by the time you're reading this, `sudo apt install readsb` from this repo should just work — check `apt-cache policy readsb` first
+  - **build from source instead** (`wiedehopf/readsb`, which is what the confirmed-working build below is based on):
+    * `sudo apt install -y build-essential librtlsdr-dev libusb-1.0-0-dev pkg-config git debhelper help2man libzstd-dev libncurses-dev zlib1g-dev`
+    * `git clone https://github.com/wiedehopf/readsb.git && cd readsb`
+    * **RTL-SDR support is gated behind a Debian *build profile*, not a plain `make` flag** — `debian/rules` only appends `RTLSDR=yes` to the build when `DEB_BUILD_PROFILES` contains `rtlsdr` (see its `CONFIG_SWITCH` logic). A bare `dpkg-buildpackage -b` silently produces the same RTL-SDR-less binary as the apt package:
+      - `dpkg-buildpackage -b -Prtlsdr`
+    * if you rebuild after an earlier attempt, run `make clean` first — debhelper tracks build completion via stamp files under `debian/.debhelper/` and can silently skip re-running the compile step (reusing the previous, RTL-SDR-less build) even when the build profile changes
+    * install the result: `cd .. && sudo dpkg -i readsb_*.deb && sudo apt install -f` (ignore the `-dbgsym` package, that's debug symbols only)
+    * **verify with a real invocation, not `--help`**: the `readsb --help` "supported SDR types" listing turned out to be stale/generic text that didn't reflect actual compiled support either way in testing — confirm with `sudo readsb --device 0 --device-type rtlsdr --gain -10 --ppm 0 --net` instead; getting past the "SDR type not recognized" error (even into a different, device-specific error) confirms it's genuinely compiled in
+  - grant the (unprivileged) `readsb` system user permission to open the RTL-SDR USB device
+    * without this, the service fails fast with `FATAL: rtlsdr: error querying device #0: Permission denied` — a manual `sudo readsb ...` test working is not enough to confirm this, since root bypasses the permission check the service account doesn't
+    * `sudo apt install rtl-sdr` (ships the udev rule granting the `plugdev` group access to known RTL-SDR vendor/product IDs — `librtlsdr-dev` alone, installed earlier for the build, does not include this)
+    * `sudo usermod -aG plugdev readsb`
+    * `sudo udevadm control --reload-rules && sudo udevadm trigger`
+  - configure it to read from the USB-SDR dongle: `/etc/default/readsb` sets four env vars the systemd unit's `ExecStart` references (`$RECEIVER_OPTIONS $DECODER_OPTIONS $NET_OPTIONS $JSON_OPTIONS`) — confirmed working values for the FlightAware dongle used here:
+    ```
+    RECEIVER_OPTIONS="--device 0 --device-type rtlsdr --gain auto --ppm 0"
+    DECODER_OPTIONS="--max-range 450 --write-json-every 1"
+    NET_OPTIONS="--net --net-ri-port 30001 --net-ro-port 30002 --net-sbs-port 30003 --net-bi-port 30004,30104 --net-bo-port 30005"
+    JSON_OPTIONS="--json-location-accuracy 2 --range-outline-hours 24"
+    ```
   - enable and start service
     * `sudo systemctl enable --now readsb`
-  - verify the service is running correctly
-    * `curl http://localhost/data/aircraft.json`
+    * `sudo journalctl -u readsb -n 50 --no-pager` — confirm no `Permission denied`/`sdrOpen() failed` errors
+  - **readsb only writes `aircraft.json` to disk (`/run/readsb/`, per the unit's `--write-json /run/readsb`) — it does not serve HTTP itself.** Something else has to serve that directory for `curl`/`ReadsbClient` to reach it at all; `--net` alone (enabling readsb's own TCP ports for raw/Beast/SBS feeds) does not cover this
+    * lean option (no web UI needed on a sealed, air-gapped unit — just the raw JSON): `lighttpd` with a symlink into readsb's output directory
+      - `sudo apt install lighttpd`
+      - `sudo ln -s /run/readsb /var/www/html/data` (the symlink itself is on the persistent root filesystem; its target, `/run/readsb`, is tmpfs and gets recreated fresh by systemd's `RuntimeDirectory=readsb` on every readsb start, so this survives reboots without needing to be redone)
+      - `sudo systemctl enable --now lighttpd`
+      - if `curl` still 404s, lighttpd's default config may have `server.follow-symlink` disabled — use an explicit `alias.url += ( "/data/" => "/run/readsb/" )` in its config instead
+    * fuller option: install `tar1090` for a full map-based web UI, which configures lighttpd and serves at `/tar1090/data/aircraft.json` instead — not needed just to reach the JSON endpoint, but an option if the web UI itself is useful for field debugging
+    * whichever path, it must match `--readsbUrl` passed to `scripts/standaloneRecord.py` (`standaloneRecorder.service`'s default is `http://localhost/data/aircraft.json`)
+  - verify: `curl http://localhost/data/aircraft.json`
 
 * Set up GPS time discipline (gpsd + chrony, since this unit has no internet for NTP)
   - the GPS receiver is wired to UART0/1 (for wiring/routing reasons, not USART4 — no conflict with the LED/PPS pins, which are on a separate peripheral either way)
