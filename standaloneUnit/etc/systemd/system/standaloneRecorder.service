@@ -1,6 +1,10 @@
 [Unit]
 Description=Standalone aircraft audio/ADS-B/GPS recording unit
 After=network.target gpsd.service chronyd.service
+# recordings/ lives on the micro-SD (SPI) card, mounted via /etc/fstab — wait
+# for that mount rather than starting and writing into the underlying eMMC
+# root filesystem if the card isn't up yet.
+RequiresMountsFor=/home/jdn/Code/AircraftAudioId/recordings
 
 [Service]
 Type=simple

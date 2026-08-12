@@ -126,6 +126,30 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
       - temporarily use the stock 'spi1-1cs' overlay instead (which mux's the pins correctly and creates /dev/spidev1.0), unbind 'spidev' from it, and hand-bind 'mmc_spi' to the same device path at runtime
       - this is a reasonable way to confirm the wiring and the card itself both work before trusting the custom overlay's DT syntax
         * worth doing first, since it isolates "is the hardware/wiring good" from "is my custom .dts correct"
+* **confirmed working:** `mmc_spi` binds to `spi1.0` and registers an MMC host with `cm4-sdspi.dts` as shipped, at `spi-max-frequency = <400000>` (400 kHz)
+  - the originally-specified 12 MHz produced `mmc_spi spi1.0: no support for card's volts` on every boot — not a `voltage-ranges` misconfiguration, but the SD spec's power-up handshake (CMD0/CMD8/OCR query) needing to run at <=400 kHz; `mmc_spi` doesn't auto-negotiate a slower probe clock, it uses `spi-max-frequency` throughout, so 12 MHz corrupted that initial exchange
+  - if higher throughput is needed later, this can be stepped up from 400 kHz and retested, but hand-wired JST-GH cabling is unlikely to hold up much past the low single-digit MHz range
+
+#### Mount the micro-SD as recordings storage
+
+The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it at `recordings/` inside the repo checkout so `standaloneRecorder.service`'s existing `--outputDir` default needs no changes.
+
+* identify the device (distinct from the CM4's boot eMMC)
+  - `lsblk` or `dmesg | grep -i mmc` — the SD-over-SPI card registers separately from the eMMC (which is normally `/dev/mmcblk0`)
+* partition and format — **destructive**, skip if the card already has data you need
+  - `sudo parted /dev/mmcblkX --script mklabel gpt mkpart primary ext4 0% 100%`
+  - `sudo mkfs.ext4 /dev/mmcblkXp1`
+  - ext4 over exFAT/FAT32: native Linux permissions/symlinks, no 4 GB file-size ceiling, and journaling matters for a card that can lose power ungracefully in the field
+* get a stable identifier for `/etc/fstab` (device names can shift across boots with multiple mmc devices)
+  - `sudo blkid /dev/mmcblkXp1`
+* if `recordings/` already has data on the eMMC from earlier bring-up testing, move it onto the new card first — mounting over the directory hides (does not delete) its previous contents, but don't rely on that
+  - `mkdir -p /home/jdn/Code/AircraftAudioId/recordings`
+* add to `/etc/fstab` (`nofail` so a missing/faulty card doesn't hang boot on an unattended unit)
+  - `UUID=<uuid-from-blkid>  /home/jdn/Code/AircraftAudioId/recordings  ext4  defaults,noatime,nofail  0  2`
+* mount and verify without rebooting
+  - `sudo mount -a`
+  - `df -h /home/jdn/Code/AircraftAudioId/recordings`
+* make `standaloneRecorder.service` wait for the mount rather than starting and writing straight into the underlying eMMC root filesystem if the card isn't mounted yet — already added: `RequiresMountsFor=/home/jdn/Code/AircraftAudioId/recordings` in the service's `[Unit]` section
 
 #### Install the Application Software on the Standalone Device
 

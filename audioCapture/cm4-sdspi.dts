@@ -57,7 +57,13 @@
             sdspi: sd@0 {
                 compatible = "mmc-spi-slot";
                 reg = <0>;
-                spi-max-frequency = <12000000>;
+                spi-max-frequency = <400000>;   /* confirmed on hardware; 12 MHz produced
+                                                    "no support for card's volts" — the SD
+                                                    spec's init handshake (CMD0/CMD8/OCR
+                                                    query) needs to run at <=400 kHz, and
+                                                    mmc_spi doesn't auto-negotiate a slower
+                                                    probe clock, it just uses this value
+                                                    throughout */
                 voltage-ranges = <3000 3500>;
                 non-removable;
                 status = "okay";
