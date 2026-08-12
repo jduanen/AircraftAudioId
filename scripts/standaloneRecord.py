@@ -106,6 +106,19 @@ def main():
 
     signal.signal(signal.SIGUSR1, lambda signum, frame: recorder.dumpSessionSummary())
 
+    # Convert SIGTERM (what systemd sends on stop/restart) into the same
+    # KeyboardInterrupt-based shutdown path Ctrl-C already uses, so the
+    # try/finally below runs recorder.stop() and the status LED is driven
+    # off explicitly. Without this, SIGTERM kills the process with no
+    # cleanup at all — confirmed on hardware that releasing a GPIO line
+    # does not reset it to floating; the pin keeps driving whatever level
+    # it was last set to, so an unhandled SIGTERM can leave the LED stuck
+    # on or off rather than reading as "crashed".
+    def _handleSigterm(signum, frame):
+        raise KeyboardInterrupt()
+
+    signal.signal(signal.SIGTERM, _handleSigterm)
+
     try:
         recorder.start()
     finally:
