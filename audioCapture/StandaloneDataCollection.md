@@ -160,13 +160,15 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
     * `curl http://localhost/data/aircraft.json`
 
 * Set up GPS time discipline (gpsd + chrony, since this unit has no internet for NTP)
+  - the GPS receiver is wired to UART0/1 (for wiring/routing reasons, not USART4 — no conflict with the LED/PPS pins, which are on a separate peripheral either way)
+  - `enable_uart=1` in `/boot/firmware/config.txt` is enough to bring up this UART — no additional `dtoverlay=uartN` needed, since it's the SoC's primary UART
+  - use `/dev/serial0` rather than a specific `ttyAMA*`/`ttyS0` name: the firmware/udev symlink `/dev/serial0` always points at whichever device is actually the primary UART, which otherwise depends on Bluetooth presence/config
   - `sudo apt install gpsd chrony`
   - point gpsd at the GPS receiver's serial device
     * `sudo ex /etc/default/gpsd`
-      - `DEVICES="/dev/ttyAMA3"`
-        * match whichever UART the GPS is wired to
+      - `DEVICES="/dev/serial0"`
     * `sudo systemctl enable --now gpsd`
-  - verify raw NMEA output before wiring in GpsClient: `cat /dev/ttyAMA3`
+  - verify raw NMEA output before wiring in GpsClient: `cat /dev/serial0`
   - if the PPS overlay is enabled (see "Enable GPS PPS on CTS4" above), gpsd auto-detects `/dev/pps0` alongside the serial NMEA device and exposes a second, PPS-corrected SHM segment (SHM(1))
     * this is in addition to the coarse NMEA-only one (SHM(0)); no extra gpsd config needed
   - discipline chrony from gpsd's shared-memory (SHM) time reference
@@ -223,7 +225,7 @@ python scripts/standaloneRecord.py \
     --outputDir ./recordings \
     --faaDatabaseDir /path/to/ReleasableAircraft \
     [--readsbUrl http://localhost/data/aircraft.json] \
-    [--gpsPort /dev/ttyAMA3] [--gpsMinSatellites 4] \
+    [--gpsPort /dev/serial0] [--gpsMinSatellites 4] \
     [--ledChip gpiochip0] [--ledLine 11] \
     [--minFreeGb 2] \
     [--nullSampleInterval 210] [--nullSampleDuration 15]

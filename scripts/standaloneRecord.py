@@ -9,7 +9,7 @@ Usage:
     python scripts/standaloneRecord.py --outputDir ./recordings \
         --faaDatabaseDir /path/to/ReleasableAircraft \
         [--readsbUrl http://localhost/data/aircraft.json] \
-        [--gpsPort /dev/ttyAMA3] [--ledChip gpiochip0 --ledLine 11]
+        [--gpsPort /dev/serial0] [--ledChip gpiochip0 --ledLine 11]
 
 Send SIGUSR1 to the running process to write a session summary snapshot
 (session_<timestamp>.json in outputDir) without stopping the recorder:
@@ -39,7 +39,7 @@ def main():
     p.add_argument("--micDeviceIndex", type=int, default=None,
                    help="sounddevice input device index (omit for system default)")
     p.add_argument("--chunkFrames", type=int, default=4096, help="Audio frames per capture callback")
-    p.add_argument("--gpsPort", type=str, default="/dev/ttyAMA3", help="GPS receiver serial device")
+    p.add_argument("--gpsPort", type=str, default="/dev/serial0", help="GPS receiver serial device")
     p.add_argument("--gpsBaud", type=int, default=9600, help="GPS receiver baud rate")
     p.add_argument("--gpsFixTimeoutSecs", type=float, default=None,
                    help="Give up waiting for a GPS fix after this many seconds (default: wait forever)")

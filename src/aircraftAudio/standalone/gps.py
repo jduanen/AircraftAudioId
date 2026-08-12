@@ -43,7 +43,7 @@ class GpsClient:
 
     def __init__(
         self,
-        port: str = "/dev/ttyAMA3",
+        port: str = "/dev/serial0",
         baudrate: int = 9600,
         readTimeoutSecs: float = 2.0,
         serialFactory: Optional[Callable] = None,

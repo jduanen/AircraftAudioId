@@ -79,7 +79,7 @@ class StandaloneRecorder:
         readsbUrl: str = "http://localhost/data/aircraft.json",
         micDeviceIndex: Optional[int] = None,
         chunkFrames: int = 4096,
-        gpsPort: str = "/dev/ttyAMA3",
+        gpsPort: str = "/dev/serial0",
         gpsBaud: int = 9600,
         gpsFixTimeoutSecs: Optional[float] = None,
         gpsMinSatellites: int = 4,
