@@ -216,7 +216,20 @@ class GpsdClient:
 
                 msgClass = msg.get("class")
                 if msgClass == "SKY":
-                    satellitesUsed = sum(1 for s in msg.get("satellites", []) if s.get("used"))
+                    # Prefer gpsd's own uSat summary field — present on every
+                    # SKY report, full or abbreviated. gpsd alternates between
+                    # full reports (with a complete satellites array) and
+                    # abbreviated ones (uSat only, no array) — counting the
+                    # array directly would silently zero out a correct count
+                    # from the previous full report whenever an abbreviated
+                    # one arrives (confirmed on hardware: this caused
+                    # waitForFix to reject every fix indefinitely, since an
+                    # abbreviated report landing right before a TPV always
+                    # reset the tracked count to 0).
+                    if "uSat" in msg:
+                        satellitesUsed = msg["uSat"]
+                    else:
+                        satellitesUsed = sum(1 for s in msg.get("satellites", []) if s.get("used"))
                 elif msgClass == "TPV":
                     if msg.get("mode", 0) < 2 or "lat" not in msg or "lon" not in msg:
                         continue
