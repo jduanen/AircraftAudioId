@@ -11,6 +11,11 @@ Type=simple
 User=jdn
 Group=jdn
 WorkingDirectory=/home/jdn/Code/AircraftAudioId
+# Python fully-buffers stdout when it isn't a TTY (always the case under
+# systemd) — without this, the recorder's print() diagnostics (GPS fix
+# wait, observer position, save events, etc.) can sit in the buffer
+# indefinitely instead of reaching `journalctl` promptly.
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/jdn/Code/AircraftAudioId/standaloneUnit/venv/bin/python \
     /home/jdn/Code/AircraftAudioId/scripts/standaloneRecord.py \
     --outputDir /home/jdn/Code/AircraftAudioId/recordings \
