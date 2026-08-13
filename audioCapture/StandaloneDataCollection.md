@@ -296,7 +296,9 @@ The Standalone system reuses the Local system's `AircraftRecordingSystem` core (
 
 **Module:** `src/aircraftAudio/standalone/gps.py` — `GpsdClient`
 
-Blocks until gpsd reports a valid fix with at least `--gpsMinSatellites` satellites used, via gpsd's own TCP JSON protocol (`--gpsdHost`/`--gpsdPort`, default `127.0.0.1:2947`) rather than reading the GPS's serial device directly. This fix's latitude/longitude become `observerLat`/`observerLon` for the entire run — see "Software" above for why there's no runtime re-acquisition.
+Blocks until gpsd reports a valid fix (`TPV` message, `mode >= 2`), via gpsd's own TCP JSON protocol (`--gpsdHost`/`--gpsdPort`, default `127.0.0.1:2947`) rather than reading the GPS's serial device directly. This fix's latitude/longitude become `observerLat`/`observerLon` for the entire run — see "Software" above for why there's no runtime re-acquisition.
+
+`--gpsMinSatellites` (default `0`) can additionally require a minimum satellite count from gpsd's `SKY` reports, but defaults off: `SKY` and `TPV` are separate, asynchronously-arriving gpsd message types, so gating on a satellite count that may not be freshly updated at the exact moment a good `TPV` lands **can reject an otherwise-valid fix indefinitely** — confirmed on hardware with a GPS hovering around 3-4 satellites against a default of 4, which stalled `waitForFix()` well past when gpsd already had a good, chrony-confirmed fix. `mode >= 2` is gpsd's own authoritative fix-quality signal; treat `--gpsMinSatellites` as an optional stricter filter, not something to rely on by default.
 
 **Why `GpsdClient` and not a direct serial read:** `gps.py` also provides `GpsClient`, which reads `/dev/serial0` directly via NMEA parsing — but gpsd already holds that device open with an exclusive lock (`TIOCEXCL`) for the chrony PPS/SHM time bridge (see "Set up GPS time discipline" above), so a second process opening it directly fails immediately with `OSError: [Errno 16] Device or resource busy` — confirmed on hardware. `GpsdClient` queries gpsd's already-running fix instead of competing for the raw device; `GpsClient` remains available for standalone use where gpsd isn't already running against the same port.
 
@@ -323,7 +325,7 @@ python scripts/standaloneRecord.py \
     --outputDir ./recordings \
     --faaDatabaseDir /path/to/ReleasableAircraft \
     [--readsbUrl http://localhost/data/aircraft.json] \
-    [--gpsdHost 127.0.0.1] [--gpsdPort 2947] [--gpsMinSatellites 4] \
+    [--gpsdHost 127.0.0.1] [--gpsdPort 2947] [--gpsMinSatellites 0] \
     [--ledChip gpiochip0] [--ledLine 11] \
     [--minFreeGb 2] \
     [--nullSampleInterval 210] [--nullSampleDuration 15]

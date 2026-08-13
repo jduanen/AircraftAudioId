@@ -46,8 +46,13 @@ def main():
     p.add_argument("--gpsdPort", type=int, default=2947, help="gpsd port (default: gpsd's standard port)")
     p.add_argument("--gpsFixTimeoutSecs", type=float, default=None,
                    help="Give up waiting for a GPS fix after this many seconds (default: wait forever)")
-    p.add_argument("--gpsMinSatellites", type=int, default=4,
-                   help="Minimum satellites required to accept a GPS fix")
+    p.add_argument("--gpsMinSatellites", type=int, default=0,
+                   help="Minimum satellites (per gpsd's SKY report) required to accept a GPS "
+                        "fix, on top of gpsd's own mode>=2 fix determination. Default 0 "
+                        "(rely on mode alone) — SKY and TPV are separate, asynchronously "
+                        "arriving gpsd message types, so a strict minimum here can reject "
+                        "an otherwise-good fix just because the most recent SKY report "
+                        "happened to land a moment before satellite count ticked up.")
     p.add_argument("--ledChip", type=str, default="gpiochip0", help="gpiod chip name for the status LED")
     p.add_argument("--ledLine", type=int, default=11, help="GPIO line offset driving the status LED (RTS4)")
     p.add_argument("--ledBlinkIntervalSecs", type=float, default=0.5,

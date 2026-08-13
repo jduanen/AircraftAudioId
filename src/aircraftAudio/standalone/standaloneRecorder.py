@@ -86,7 +86,7 @@ class StandaloneRecorder:
         gpsdHost: str = "127.0.0.1",
         gpsdPort: int = 2947,
         gpsFixTimeoutSecs: Optional[float] = None,
-        gpsMinSatellites: int = 4,
+        gpsMinSatellites: int = 0,
         ledChip: str = "gpiochip0",
         ledLine: int = 11,
         ledBlinkIntervalSecs: float = 0.5,
