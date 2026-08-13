@@ -11,9 +11,11 @@
 #                               rather than cherry-picked per submodule so
 #                               internal imports (e.g. standaloneRecorder.py's
 #                               ..dataset.faaDatabase) never break.
-#   scripts/standaloneRecord.py — the one entry point this unit runs.
-#   standaloneUnit/           — requirements.txt, systemd service,
-#                               cm4-led-gpio.dts, cm4-sdspi.dts
+#   scripts/standaloneRecord.py — the main recording entry point.
+#   scripts/shutdownButtonWatch.py — the shutdown-button entry point.
+#   standaloneUnit/           — requirements.txt, systemd services,
+#                               cm4-led-gpio.dts, cm4-sdspi.dts,
+#                               cm4-shutdown-button.dts
 #   data/ReleasableAircraft/  — offline FAA registry; --faaDatabaseDir is
 #                               required for StandaloneRecorder. ~500 MB on
 #                               first sync, incremental after. Skip with
@@ -76,6 +78,10 @@ rsync ${OPTS} \
     "${REMOTE_ROOT}/scripts/standaloneRecord.py"
 
 rsync ${OPTS} \
+    "${PROJECT_ROOT}/scripts/shutdownButtonWatch.py" \
+    "${REMOTE_ROOT}/scripts/shutdownButtonWatch.py"
+
+rsync ${OPTS} \
     "${PROJECT_ROOT}/standaloneUnit/" \
     "${REMOTE_ROOT}/standaloneUnit/"
 
@@ -88,5 +94,5 @@ else
 fi
 
 echo "Sync complete."
-echo "If standaloneRecorder.service is running on ${STANDALONE_HOST}, restart it to pick up the new code:"
-echo "  ssh jdn@${STANDALONE_HOST} sudo systemctl restart standaloneRecorder"
+echo "If standaloneRecorder/shutdownButton services are running on ${STANDALONE_HOST}, restart them to pick up the new code:"
+echo "  ssh jdn@${STANDALONE_HOST} sudo systemctl restart standaloneRecorder shutdownButton"

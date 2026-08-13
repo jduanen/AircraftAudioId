@@ -22,6 +22,8 @@ The Ochin daughterboard schematics must be consulted to determine how to wire th
 
 The unit has a water-resistant power connector for the 12VDC (@?A) power supply required to operate the unit. This switch is lighted and is connected at one end to the 3V3 pin on UART0/1, and the other side is connected to the RTS pin on USART4.
 
+A separate momentary pushbutton (not the illuminated power switch above) is wired to USART4's RXD pin, for triggering a graceful shutdown without needing to pull power.
+
 The enslosure is a cast aluminium case that serves as a heat-sink for the CM4 module (and, if possible, the USB-SDR dongle).
 The three (ADS-B 1090MHz, WiFi, and GPS) antennas are mounted onto the enclosure in such a manner as to resist water infiltration.
 
@@ -34,6 +36,8 @@ The (software-controlled) illuminated power switch is the only indication that t
 It is expected that, in order to gather sufficient data, this unit will remain in a location for days to months at a time. This means that the unit must contain sufficient storage space to contain all of the samples and metadata generated before the unit is retreived and the information dumped. Once free storage drops below a threshold, new recordings are halted (never auto-deleted) and the LED switches to its error-blink pattern, signaling that the unit needs retrieval.
 
 Because the unit is moved by power-cycling it (there's no way to relocate a sealed, running unit), it reads its position from the on-board GPS receiver exactly once at startup — blocking until a fix is acquired — and uses that fixed position for the entire run. There is no runtime location-change detection or mid-run restart; a fresh fix is simply acquired the next time the unit boots.
+
+A separate shutdown button (see "Hardware" above) triggers a full, graceful `systemctl poweroff` — not just stopping `standaloneRecorder`. It runs as its own independent service (`shutdownButton.service`) so it keeps working even if the recording service has crashed. Combined with the CM4 bootloader's `POWER_OFF_ON_HALT=1` EEPROM setting (see "Installation" below), a press brings the unit to genuine low-power state rather than just an idle halt, safe to physically power off at that point.
 
 ### Installation
 
@@ -67,6 +71,23 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
   - **found:** releasing a driven GPIO line on the BCM2711 does *not* return it to floating — the pin keeps driving its last-set level until explicitly changed or the board is power-cycled (confirmed: `Ctrl-C` on `gpioset ...11=1` left the LED on; `Ctrl-C` on `...11=0` left it off). This means "off" only reliably means "never touched since boot" — a hard crash (`SIGKILL`, panic) after the LED has been driven can leave it stuck in whatever state it was last in, not necessarily off
     * mitigated: `scripts/standaloneRecord.py` now converts `SIGTERM` (what `systemd stop`/`restart` sends) into the same graceful-shutdown path `Ctrl-C` already used, so the LED is explicitly driven off on any orderly stop — confirmed via a mocked-GPIO test that this runs even if `SIGTERM` arrives mid-startup (before the main recording loop)
     * still open: this doesn't cover `SIGKILL`/kernel panics/hangs — a systemd watchdog (`WatchdogSec=` + periodic `sd_notify` from the health-loop thread) would close that gap but hasn't been added yet
+
+#### Enable the shutdown button GPIO (see standaloneUnit/cm4-shutdown-button.dts)
+
+* a separate momentary switch (not the illuminated power switch/LED above) is wired to RXD4 (USART4) and GND
+  - with RTS4 claimed by the LED and CTS4 by GPS PPS, RXD4 was the last free USART4 pin — chosen over TXD4 since it's natively an input, matching the button's direction
+* RXD4 is BCM GPIO9 on the Ochin baseboard, matching `shutdownButtonWatch.py`'s `--line` default
+* pull-up, edge detection, and debounce are all configured in software (`gpiod.LineSettings` in `standalone/shutdownButton.py`), not in the overlay — the overlay only handles pin muxing, same separation of concerns as the LED
+* `dtc -@ -I dts -O dtb -o cm4-shutdown-button.dtbo cm4-shutdown-button.dts`
+* `sudo install -m 0644 cm4-shutdown-button.dtbo /boot/firmware/overlays/cm4-shutdown-button.dtbo`
+* add `dtoverlay=cm4-shutdown-button` to `/boot/firmware/config.txt`
+* after reboot, confirm the line appears: `sudo gpioinfo gpiochip0`
+* set the CM4 bootloader EEPROM's `POWER_OFF_ON_HALT` so a `systemctl poweroff` actually drops the module to low power rather than idling until the next reboot:
+  - `sudo rpi-eeprom-config --edit`
+  - add/change: `POWER_OFF_ON_HALT=1`
+  - save and exit — the update is staged and applied on next reboot
+  - `sudo reboot`
+  - confirm it took: `sudo rpi-eeprom-config | grep POWER_OFF_ON_HALT`
 
 #### Enable GPS PPS on CTS4 (USART4)
 
@@ -289,6 +310,14 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
   - `sudo systemctl start standaloneRecorder`
   - `sudo journalctl -u standaloneRecorder -f`
     ==> confirm this waits for/acquires a GPS fix, then starts recording
+
+* install and enable the shutdownButton service
+  - `cd ${HOME}/Code/AircraftAudioId/standaloneUnit`
+  - `sudo cp etc/systemd/system/shutdownButton.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload`
+  - `sudo systemctl enable --now shutdownButton`
+  - `sudo journalctl -u shutdownButton -f`
+    ==> confirm it logs "Watching gpiochip0 line 9 for button press", then press the button and confirm the unit shuts down cleanly (LED off, then power drops per `POWER_OFF_ON_HALT=1`)
 
 ## Workflow
 

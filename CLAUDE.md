@@ -28,13 +28,15 @@ The codebase has two layers:
 - `capture/micEval.py` — `evaluateDevices`: measures noise floor, SNR, and frequency response of attached mic/ADC devices
 - `dataset/clipExport.py` — `buildClipDataset`: aligns ADS-B states to audio, extracts clips, writes train/val CSVs; skips silent source WAVs (Pi not streaming)
 - `dataset/faaDatabase.py` — `FaaDatabase`: fully offline ICAO24→category/model lookup from a local unzipped FAA ReleasableAircraft download; used both by `buildDataset.py` and (via an adapter) by the Standalone unit's `typeDb`
-- `standalone/gps.py` — `GpsClient`/`GpsFix`: reads NMEA sentences off a serial GPS receiver; `waitForFix()` blocks until a valid fix. The Standalone unit reads location exactly once at startup — no runtime location-change detection (relocating the unit requires a power cycle)
+- `standalone/gps.py` — `GpsdClient`/`GpsClient`/`GpsFix`: `GpsdClient.waitForFix()` blocks until gpsd reports a valid fix via gpsd's own TCP JSON protocol — used because gpsd holds the GPS serial device open (`TIOCEXCL`) for the chrony PPS/SHM time bridge, so a direct serial open fails with "Device or resource busy". `GpsClient` (direct serial/NMEA parsing) is kept for use where gpsd isn't already running against the same device. The Standalone unit reads location exactly once at startup — no runtime location-change detection (relocating the unit requires a power cycle)
 - `standalone/statusLed.py` — `StatusLed`: `gpiod`-controlled illuminated power-switch LED for the Standalone unit; `setOk()` (solid), `setError()` (blink — also used while starting up/waiting for GPS), `setOff()`
+- `standalone/shutdownButton.py` — `ShutdownButton`: `gpiod`-controlled momentary switch (RXD4/GPIO9) that triggers `systemctl poweroff` on press; runs as its own service independent of `StandaloneRecorder` so it works even if recording has crashed
 - `standalone/standaloneRecorder.py` — `StandaloneRecorder`: orchestrates the Standalone unit — waits for a GPS fix, then wires `LocalAudioStream` + `ReadsbClient` (pointed at a local readsb/dump1090-fa instance) + an offline `FaaDatabase`-backed `typeDb` + `StorageGuard` + `StatusLed` around `AircraftRecordingSystem`
 **`scripts/` — server-side entry points**
 - `record.py` — run on the Ubuntu server; starts `AircraftRecordingSystem`
 - `buildDataset.py` — run on the Ubuntu server; extracts clips and writes `train.csv` / `val.csv`
 - `standaloneRecord.py` — run on the Standalone unit (CM4); starts `StandaloneRecorder`
+- `shutdownButtonWatch.py` — run on the Standalone unit (CM4); starts `ShutdownButton`
 **`audioCapture/scripts/` — Pi-side entry points**
 - `capture.py` — run on the Pi Zero W; starts `PiCapture`
 
