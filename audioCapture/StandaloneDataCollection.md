@@ -174,6 +174,8 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
 * mount and verify without rebooting
   - `sudo mount -a`
   - `df -h /home/jdn/Code/AircraftAudioId/recordings`
+* **fix ownership** — `mkfs.ext4` leaves the filesystem root owned `root:root`; `standaloneRecorder.service` runs as `User=jdn`, so without this it fails with `PermissionError: [Errno 13] Permission denied` trying to create `recordings/audio`/`recordings/metadata` (confirmed on hardware)
+  - `sudo chown jdn:jdn /home/jdn/Code/AircraftAudioId/recordings`
 * make `standaloneRecorder.service` wait for the mount rather than starting and writing straight into the underlying eMMC root filesystem if the card isn't mounted yet — already added: `RequiresMountsFor=/home/jdn/Code/AircraftAudioId/recordings` in the service's `[Unit]` section
 
 #### Install the Application Software on the Standalone Device
