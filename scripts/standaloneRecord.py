@@ -124,6 +124,11 @@ def main():
 
     try:
         recorder.start()
+    except KeyboardInterrupt:
+        pass  # Ctrl-C or SIGTERM (see _handleSigterm) — a clean, intentional
+              # stop, not a crash; exit normally rather than propagating the
+              # exception (which would exit nonzero and misleadingly look
+              # like a failure in the logs / to systemd's Restart= handling)
     finally:
         recorder.stop()
 
