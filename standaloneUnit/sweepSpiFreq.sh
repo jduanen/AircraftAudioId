@@ -6,6 +6,16 @@
 # Comment out, or remove, the `dtoverlay=cm4-sdspi` line in /boot/firmware/config.txt
 #  for now, or just reboot once first so nothing's currently claiming SPI1 CE0
 
+# stop anything that might be holding the mount open
+sudo systemctl stop standaloneRecorder 2>/dev/null
+
+sudo umount /home/jdn/Code/AircraftAudioId/recordings
+
+# confirm no overlay instance is currently active before starting fresh
+sudo dtoverlay -r cm4-sdspi
+dmesg | tail -5
+ls /dev/mmcblk3* 2>&1   # should now be go
+
 # Sweep loop -- no reboot, no recompile, each iteration is seconds
 for freq in 400000 1000000 4000000 8000000 12000000; do
     sudo dtoverlay -r cm4-sdspi 2>/dev/null
