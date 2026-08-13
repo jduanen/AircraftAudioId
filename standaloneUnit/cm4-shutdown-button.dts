@@ -1,0 +1,40 @@
+/*
+ * Device Tree overlay: repurpose USART4's RXD pin (RXD4, GPIO9) as a plain
+ * GPIO input, for the Standalone unit's shutdown button.
+ *
+ * Wired to a new momentary switch — not the illuminated power switch/LED,
+ * which already uses RTS4/GPIO11 (see cm4-led-gpio.dts). With RTS4 claimed
+ * by the LED and CTS4 by GPS PPS (see cm4-led-gpio.dts and the pps-gpio
+ * overlay), USART4's TXD/RXD were the last unused pins on that peripheral;
+ * RXD4 was picked since it's natively an input (matches the button's
+ * direction) — TXD4 (GPIO8) remains free.
+ *
+ * Pull-up, edge detection, and debounce are all configured in software via
+ * gpiod's LineSettings (see standalone/shutdownButton.py), not here — this
+ * overlay only concerns pin muxing, same separation of concerns as
+ * cm4-led-gpio.dts.
+ *
+ * Compile and install (same pattern as cm4-led-gpio.dts / cm4-sdspi.dts):
+ *   sudo apt install -y device-tree-compiler
+ *   dtc -@ -I dts -O dtb -o cm4-shutdown-button.dtbo cm4-shutdown-button.dts
+ *   sudo install -m 0644 cm4-shutdown-button.dtbo /boot/firmware/overlays/cm4-shutdown-button.dtbo
+ * Enable by adding to /boot/firmware/config.txt:
+ *   dtoverlay=cm4-shutdown-button
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2711";
+
+    fragment@0 {
+        target = <&gpio>;
+        __overlay__ {
+            shutdown_button_pins: shutdown_button_pins {
+                brcm,pins = <9>;       /* RXD4 (USART4) */
+                brcm,function = <0>;   /* 0 = GPIO input */
+            };
+        };
+    };
+};

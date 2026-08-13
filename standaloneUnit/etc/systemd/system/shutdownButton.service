@@ -1,0 +1,17 @@
+[Unit]
+Description=Standalone unit shutdown button watcher
+After=multi-user.target
+
+[Service]
+Type=simple
+# Runs as root (unlike standaloneRecorder.service's unprivileged jdn user):
+# systemctl poweroff requires privilege, and root also sidesteps needing a
+# udev rule granting GPIO access the way the LED/PPS pins did.
+User=root
+ExecStart=/home/jdn/Code/AircraftAudioId/standaloneUnit/venv/bin/python \
+    /home/jdn/Code/AircraftAudioId/scripts/shutdownButtonWatch.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
