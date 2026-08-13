@@ -126,9 +126,34 @@ Because the unit is moved by power-cycling it (there's no way to relocate a seal
       - temporarily use the stock 'spi1-1cs' overlay instead (which mux's the pins correctly and creates /dev/spidev1.0), unbind 'spidev' from it, and hand-bind 'mmc_spi' to the same device path at runtime
       - this is a reasonable way to confirm the wiring and the card itself both work before trusting the custom overlay's DT syntax
         * worth doing first, since it isolates "is the hardware/wiring good" from "is my custom .dts correct"
-* **confirmed working:** `mmc_spi` binds to `spi1.0` and registers an MMC host with `cm4-sdspi.dts` as shipped, at `spi-max-frequency = <400000>` (400 kHz)
-  - the originally-specified 12 MHz produced `mmc_spi spi1.0: no support for card's volts` on every boot — not a `voltage-ranges` misconfiguration, but the SD spec's power-up handshake (CMD0/CMD8/OCR query) needing to run at <=400 kHz; `mmc_spi` doesn't auto-negotiate a slower probe clock, it uses `spi-max-frequency` throughout, so 12 MHz corrupted that initial exchange
-  - if higher throughput is needed later, this can be stepped up from 400 kHz and retested, but hand-wired JST-GH cabling is unlikely to hold up much past the low single-digit MHz range
+* **confirmed working:** `mmc_spi` binds to `spi1.0` and registers an MMC host with `cm4-sdspi.dts`
+  - **`spi-max-frequency` is card-specific, not just wiring-specific — always sweep and verify per-card, don't trust a number from a different card.** A first card failed even 12 MHz with `mmc_spi spi1.0: no support for card's volts` on every boot; 400 kHz (the SD spec's own mandated power-up handshake speed — `mmc_spi` doesn't auto-negotiate a slower probe clock, it uses `spi-max-frequency` throughout, including CMD0/CMD8/OCR) was the only thing that worked for that card. A second (currently in-use) card, on the identical wiring/overlay, swept cleanly all the way to 24 MHz — 60x the first card's ceiling. Don't assume either number transfers to a new card.
+  - **fast, no-reboot way to sweep speeds**: `spi-max-frequency` is exposed as a live-overridable `freq` parameter (see `cm4-sdspi.dts`'s `__overrides__` block) via Raspberry Pi's configfs-based live overlay loading — no recompile, no reboot per test:
+    ```bash
+    # unmount first — the overlay can't be removed/reapplied under a live filesystem
+    sudo systemctl stop standaloneRecorder 2>/dev/null
+    sudo umount /home/jdn/Code/AircraftAudioId/recordings 2>/dev/null
+
+    for freq in 400000 1000000 4000000 8000000 12000000 16000000 20000000 24000000; do
+        sudo dtoverlay -r cm4-sdspi 2>/dev/null
+        sleep 1
+        sudo dtoverlay cm4-sdspi freq=$freq
+        sleep 1
+        echo "=== $freq Hz ==="; dmesg | tail -5; ls /dev/mmcblk3* 2>&1; echo
+    done
+    ```
+    watch for `no support for card's volts` or a missing `/dev/mmcblkN` — that marks where it broke
+  - **live overlay churn degrades after repeated cycles** — expect `OF: overlay: WARNING: memory leak will occur if overlay removed` after several add/remove cycles, and eventually `Failed to apply overlay '0_cm4-sdspi' (kernel)` with no new dmesg output at all (state corruption, not a new hardware problem). `sudo reboot` clears it. Past ~5-8 live cycles in one session, prefer testing one value at a time via `config.txt` (`dtoverlay=cm4-sdspi,freq=<value>` + reboot) over continued live cycling.
+  - **enumeration succeeding isn't proof the speed is safe for sustained transfer** — it only confirms the init handshake worked, not that data written at that clock won't get corrupted by marginal signal integrity. Verify with an actual write+read-back checksum before trusting a value:
+    ```bash
+    dd if=/dev/urandom of=/tmp/testfile bs=1M count=200
+    sha256sum /tmp/testfile
+    sudo cp /tmp/testfile /mnt/testfile   # mount point used during testing
+    sync
+    sudo umount /mnt && sudo mount /dev/mmcblk3p1 /mnt   # force a fresh read, not cached
+    sha256sum /mnt/testfile   # must match exactly
+    ```
+  - **committed value: 16 MHz** — deliberately short of the tested-clean 24 MHz ceiling, to leave real margin for temperature/voltage/connector-wear drift over months of unattended field deployment rather than running at the edge of what merely passed once on the bench. Actual throughput needs for this workload are modest regardless (mono 44.1kHz int16 WAV is ~86 KB/s raw) — the point of testing higher speeds is safety margin, not because more speed was actually needed.
 
 #### Mount the micro-SD as recordings storage
 

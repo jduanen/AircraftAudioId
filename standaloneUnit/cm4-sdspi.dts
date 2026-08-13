@@ -72,13 +72,22 @@
             sdspi: sd@0 {
                 compatible = "mmc-spi-slot";
                 reg = <0>;
-                spi-max-frequency = <400000>;   /* confirmed on hardware; 12 MHz produced
-                                                    "no support for card's volts" — the SD
-                                                    spec's init handshake (CMD0/CMD8/OCR
-                                                    query) needs to run at <=400 kHz, and
-                                                    mmc_spi doesn't auto-negotiate a slower
-                                                    probe clock, it just uses this value
-                                                    throughout */
+                spi-max-frequency = <16000000>; /* swept 400kHz-24MHz on hardware (see
+                                                    __overrides__ below); 24MHz enumerated
+                                                    cleanly and passed a 200MB write+
+                                                    read-back sha256 integrity check, but
+                                                    16MHz was chosen instead of the tested
+                                                    ceiling to leave real margin for
+                                                    temperature/voltage/connector-wear
+                                                    drift over months of unattended field
+                                                    deployment — not just whatever barely
+                                                    passed once on the bench. (A *different*
+                                                    card previously failed even 12MHz with
+                                                    "no support for card's volts" — that was
+                                                    a card-specific SPI-mode compatibility
+                                                    limitation, not a wiring/frequency
+                                                    ceiling; see StandaloneDataCollection.md
+                                                    for the full sweep methodology.) */
                 voltage-ranges = <3000 3500>;
                 non-removable;
                 status = "okay";
