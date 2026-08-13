@@ -20,7 +20,7 @@ from ..record.recorder import AircraftRecordingSystem
 from ..record.storageGuard import StorageGuard
 from ..record.adsb.readsb import ReadsbClient
 from ..record.audioStream.localStream import LocalAudioStream
-from .gps import GpsClient
+from .gps import GpsdClient
 from .statusLed import StatusLed
 
 
@@ -53,8 +53,12 @@ class StandaloneRecorder:
             (unlike record.py) — see the class docstring below.
         micDeviceIndex, chunkFrames:
             LocalAudioStream config.
-        gpsPort, gpsBaud, gpsFixTimeoutSecs, gpsMinSatellites:
-            GpsClient config. gpsFixTimeoutSecs=None waits forever.
+        gpsdHost, gpsdPort, gpsFixTimeoutSecs, gpsMinSatellites:
+            GpsdClient config — queries gpsd's own TCP JSON protocol rather
+            than opening the serial device directly, since gpsd already
+            holds it open (TIOCEXCL) for the chrony PPS/SHM bridge; a
+            second direct open fails with "Device or resource busy"
+            (confirmed on hardware). gpsFixTimeoutSecs=None waits forever.
         ledChip, ledLine, ledBlinkIntervalSecs:
             StatusLed config.
         minFreeBytes:
@@ -79,8 +83,8 @@ class StandaloneRecorder:
         readsbUrl: str = "http://localhost/data/aircraft.json",
         micDeviceIndex: Optional[int] = None,
         chunkFrames: int = 4096,
-        gpsPort: str = "/dev/serial0",
-        gpsBaud: int = 9600,
+        gpsdHost: str = "127.0.0.1",
+        gpsdPort: int = 2947,
         gpsFixTimeoutSecs: Optional[float] = None,
         gpsMinSatellites: int = 4,
         ledChip: str = "gpiochip0",
@@ -112,8 +116,8 @@ class StandaloneRecorder:
         self.readsbUrl = readsbUrl
         self.micDeviceIndex = micDeviceIndex
         self.chunkFrames = chunkFrames
-        self.gpsPort = gpsPort
-        self.gpsBaud = gpsBaud
+        self.gpsdHost = gpsdHost
+        self.gpsdPort = gpsdPort
         self.gpsFixTimeoutSecs = gpsFixTimeoutSecs
         self.gpsMinSatellites = gpsMinSatellites
         self.ledChip = ledChip
@@ -145,7 +149,7 @@ class StandaloneRecorder:
         )
         self._led.setError()  # blink while starting up / waiting for GPS fix
 
-        gps = GpsClient(port=self.gpsPort, baudrate=self.gpsBaud)
+        gps = GpsdClient(host=self.gpsdHost, port=self.gpsdPort)
         fix = gps.waitForFix(maxWaitSecs=self.gpsFixTimeoutSecs, minSatellites=self.gpsMinSatellites)
         print(f"[standalone] Observer position: {fix.latitude}, {fix.longitude}")
 

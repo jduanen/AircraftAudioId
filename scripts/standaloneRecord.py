@@ -9,7 +9,7 @@ Usage:
     python scripts/standaloneRecord.py --outputDir ./recordings \
         --faaDatabaseDir /path/to/ReleasableAircraft \
         [--readsbUrl http://localhost/data/aircraft.json] \
-        [--gpsPort /dev/serial0] [--ledChip gpiochip0 --ledLine 11]
+        [--gpsdHost 127.0.0.1 --gpsdPort 2947] [--ledChip gpiochip0 --ledLine 11]
 
 Send SIGUSR1 to the running process to write a session summary snapshot
 (session_<timestamp>.json in outputDir) without stopping the recorder:
@@ -39,8 +39,11 @@ def main():
     p.add_argument("--micDeviceIndex", type=int, default=None,
                    help="sounddevice input device index (omit for system default)")
     p.add_argument("--chunkFrames", type=int, default=4096, help="Audio frames per capture callback")
-    p.add_argument("--gpsPort", type=str, default="/dev/serial0", help="GPS receiver serial device")
-    p.add_argument("--gpsBaud", type=int, default=9600, help="GPS receiver baud rate")
+    p.add_argument("--gpsdHost", type=str, default="127.0.0.1",
+                   help="gpsd host — gpsd holds the GPS serial device open for chrony's "
+                        "PPS/SHM time bridge, so the fix is queried via gpsd's own TCP "
+                        "protocol rather than opening the serial port directly")
+    p.add_argument("--gpsdPort", type=int, default=2947, help="gpsd port (default: gpsd's standard port)")
     p.add_argument("--gpsFixTimeoutSecs", type=float, default=None,
                    help="Give up waiting for a GPS fix after this many seconds (default: wait forever)")
     p.add_argument("--gpsMinSatellites", type=int, default=4,
@@ -85,8 +88,8 @@ def main():
         readsbUrl=args.readsbUrl,
         micDeviceIndex=args.micDeviceIndex,
         chunkFrames=args.chunkFrames,
-        gpsPort=args.gpsPort,
-        gpsBaud=args.gpsBaud,
+        gpsdHost=args.gpsdHost,
+        gpsdPort=args.gpsdPort,
         gpsFixTimeoutSecs=args.gpsFixTimeoutSecs,
         gpsMinSatellites=args.gpsMinSatellites,
         ledChip=args.ledChip,

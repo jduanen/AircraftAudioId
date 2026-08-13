@@ -6,8 +6,22 @@ Reads NMEA sentences off a serial GPS receiver and blocks until a valid fix
 is obtained. Location is read exactly once at startup — relocating the
 physical unit requires a power cycle anyway, so a single fresh fix at boot
 is sufficient. There is no runtime location-change detection.
+
+Two clients are provided:
+    GpsClient  — reads /dev/serial0 directly via pyserial + NMEA parsing.
+    GpsdClient — queries gpsd's own TCP JSON protocol instead.
+
+StandaloneRecorder uses GpsdClient, not GpsClient: gpsd holds the serial
+device open with an exclusive lock (TIOCEXCL) for the chrony PPS/SHM time
+bridge (see StandaloneDataCollection.md's GPS time discipline section), so a
+second process opening /dev/serial0 directly fails with
+`OSError: [Errno 16] Device or resource busy` — confirmed on hardware.
+GpsClient is kept for standalone use (e.g. bring-up/testing) on a system
+where gpsd isn't already running against the same device.
 """
 
+import json
+import socket
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -133,3 +147,92 @@ class GpsClient:
             )
 
         return None
+
+
+class GpsdClient:
+    """
+    Blocks until gpsd reports a valid fix, via gpsd's own TCP JSON protocol
+    (default port 2947) — used instead of GpsClient when gpsd already holds
+    the serial device open (see module docstring).
+
+    Args:
+        host:          gpsd host (default: localhost).
+        port:          gpsd port (default: 2947, gpsd's standard port).
+        socketFactory: Optional callable(host, port) -> socket-like object
+                        with makefile("rw"). Overridable for testing without
+                        a real gpsd.
+    """
+
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 2947,
+        socketFactory: Optional[Callable] = None,
+    ):
+        self.host = host
+        self.port = port
+        self._socketFactory = socketFactory or (
+            lambda host, port: socket.create_connection((host, port), timeout=5)
+        )
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def waitForFix(
+        self,
+        maxWaitSecs: Optional[float] = None,
+        minSatellites: int = 0,
+    ) -> GpsFix:
+        """
+        Block until gpsd reports a TPV fix (mode >= 2) with at least
+        minSatellites satellites used (per the most recent SKY report).
+
+        Raises:
+            TimeoutError: if maxWaitSecs elapses with no valid fix (None = wait forever).
+        """
+        sock = self._socketFactory(self.host, self.port)
+        stream = sock.makefile("rw")
+        print(f"[gps] Waiting for fix from gpsd on {self.host}:{self.port} ...")
+
+        try:
+            stream.write('?WATCH={"enable":true,"json":true}\n')
+            stream.flush()
+
+            startTime = time.time()
+            satellitesUsed = 0
+            while True:
+                if maxWaitSecs is not None and time.time() - startTime > maxWaitSecs:
+                    raise TimeoutError(f"No gpsd fix within {maxWaitSecs:.0f}s")
+
+                line = stream.readline()
+                if not line:
+                    continue
+
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                msgClass = msg.get("class")
+                if msgClass == "SKY":
+                    satellitesUsed = sum(1 for s in msg.get("satellites", []) if s.get("used"))
+                elif msgClass == "TPV":
+                    if msg.get("mode", 0) < 2 or "lat" not in msg or "lon" not in msg:
+                        continue
+                    if satellitesUsed < minSatellites:
+                        continue
+                    fix = GpsFix(
+                        latitude=msg["lat"],
+                        longitude=msg["lon"],
+                        altitudeM=msg.get("altHAE", msg.get("alt")),
+                        fixTime=time.time(),
+                        satellites=satellitesUsed or None,
+                    )
+                    print(
+                        f"[gps] Fix acquired: {fix.latitude:.5f}, {fix.longitude:.5f} "
+                        f"(sats: {fix.satellites})"
+                    )
+                    return fix
+        finally:
+            sock.close()
