@@ -19,6 +19,7 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/jdn/Code/AircraftAudioId/standaloneUnit/venv/bin/python \
     /home/jdn/Code/AircraftAudioId/scripts/standaloneRecord.py \
     --outputDir /home/jdn/Code/AircraftAudioId/recordings \
+    --radiusKm 3 \
     --readsbUrl http://localhost/data/aircraft.json \
     --faaDatabaseDir /home/jdn/Code/AircraftAudioId/data/ReleasableAircraft \
     --ledChip gpiochip0 --ledLine 11 \
