@@ -29,6 +29,21 @@
  *   ls -l /dev/spidev*          # should show nothing for spi1
  *   dmesg | grep -Ei 'spi|mmc'  # look for mmc_spi binding to spi1.0
  *   ls /dev/mmcblk*             # the card, once mmc_spi has claimed it
+ *
+ * `freq` is exposed as a live-overridable parameter (see __overrides__
+ * below) specifically to make sweeping SPI clock speeds fast: this can be
+ * removed/reapplied at runtime via configfs with no recompile and no
+ * reboot, e.g. to find a given card's max sustainable speed:
+ *   sudo dtoverlay -r cm4-sdspi
+ *   sudo dtoverlay cm4-sdspi freq=4000000
+ *   dmesg | tail -20; ls /dev/mmcblk*
+ *   # repeat with different freq= values — "no support for card's volts"
+ *   # or a missing /dev/mmcblkN means that speed corrupted the SD init
+ *   # handshake; step back down to the last value that worked cleanly.
+ * Once a value is confirmed, either set it permanently in
+ * /boot/firmware/config.txt (dtoverlay=cm4-sdspi,freq=<value>, which then
+ * survives reboots without needing to touch this file) or update the
+ * default below to match.
  */
 
 /dts-v1/;
@@ -83,5 +98,9 @@
                 brcm,function = <1>;   /* output — driven manually as CS */
             };
         };
+    };
+
+    __overrides__ {
+        freq = <&sdspi>,"spi-max-frequency:0";
     };
 };
