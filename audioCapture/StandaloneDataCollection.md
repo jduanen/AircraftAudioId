@@ -104,7 +104,7 @@ A separate shutdown button (see "Hardware" above) triggers a full, graceful `sys
   - `ppstest /dev/pps0`  # should print a timestamp once per second
 * GPS PPS outputs are typically a 3.3V TTL pulse, directly compatible with a CM4 GPIO input
   - this was confirmed against the GPS module's datasheet
-* the GPU module is a GT-UZ, and its pinout is:
+* the GPU module is a GT-U7, and its pinout is:
   - VCC: power input 3.3V
   - GND: ground
   - TXD: GPS serial data, defaults to NMEA and UBX responses
