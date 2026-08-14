@@ -12,7 +12,7 @@ In addition the using the same microphone as used in the local system (to gather
 
 ## Hardware
 
-This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit, as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
+This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit (i.e, Dayton Audio iMM-6C), as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
 
 The USB-SDR dongle is attached via a USB-A connector to the USB1 connector and the microphone is connected via a USB-C connector to the USB2 connector.
 
