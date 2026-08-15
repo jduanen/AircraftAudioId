@@ -12,7 +12,7 @@ In addition the using the same microphone as used in the local system (to gather
 
 ## Hardware
 
-This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit, as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
+This unit is based on a RasPi CM4 module with a base board that provides connectors for four USB ports, five serial ports, an I2C bus, and a SPI bus. The CM4 modules is connected to the same type of USB microphone as the Remote Audio Capture Unit (i.e, Dayton Audio iMM-6C), as well as a (FlightAware) USB-SDR ADS-B receiver dongle, and a GPS receiver (with a serial interface).
 
 The USB-SDR dongle is attached via a USB-A connector to the USB1 connector and the microphone is connected via a USB-C connector to the USB2 connector.
 
@@ -103,7 +103,7 @@ A separate shutdown button (see "Hardware" above) triggers a full, graceful `sys
   - `ppstest /dev/pps0`  # should print a timestamp once per second
 * GPS PPS outputs are typically a 3.3V TTL pulse, directly compatible with a CM4 GPIO input
   - this was confirmed against the GPS module's datasheet
-* the GPU module is a GT-UZ, and its pinout is:
+* the GPU module is a GT-U7, and its pinout is:
   - VCC: power input 3.3V
   - GND: ground
   - TXD: GPS serial data, defaults to NMEA and UBX responses
