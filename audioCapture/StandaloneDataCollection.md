@@ -83,11 +83,10 @@ A separate shutdown button (see "Hardware" above) triggers a full, graceful `sys
 * add `dtoverlay=cm4-shutdown-button` to `/boot/firmware/config.txt`
 * after reboot, confirm the line appears: `sudo gpioinfo gpiochip0`
 * set the CM4 bootloader EEPROM's `POWER_OFF_ON_HALT` so a `systemctl poweroff` actually drops the module to low power rather than idling until the next reboot:
-  - `sudo rpi-eeprom-config --edit`
-  - add/change: `POWER_OFF_ON_HALT=1`
-  - save and exit — the update is staged and applied on next reboot
-  - `sudo reboot`
-  - confirm it took: `sudo rpi-eeprom-config | grep POWER_OFF_ON_HALT`
+  - **deferred (not yet done as of this writing)** — the button and `shutdownButton.service` work fully without this: a press still triggers a clean `systemctl poweroff` and the OS halts. Without this EEPROM setting, the board just sits halted afterward instead of dropping to true low power; safe to leave unset for now and revisit later.
+  - `sudo -E rpi-eeprom-config --edit` **fails on CM4 by default** — CM4(S) disables in-OS EEPROM updates (`ERROR: EEPROM image 'rpi-eeprom-update is not enabled by default on CM4(S)...'`). The error's own suggested fix (enabling `dtparam=spi=on` in `config.txt` so the OS can talk to the EEPROM over SPI0 on GPIO7-11) **must not be used here** — it directly conflicts with GPIO9 (this button), GPIO10 (GPS PPS), and GPIO11 (status LED), all already muxed to other functions.
+  - use the `rpiboot`/`usbboot` recovery-mode method instead: from a separate host with `rpiboot` (`raspberrypi/usbboot` on GitHub) and the CM4 put into USB boot mode (button on the Ochin board), `rpiboot` mounts the CM4's eMMC/EEPROM as a mass-storage device on that host, where `rpi-eeprom-config`/`rpi-eeprom-update` can edit `POWER_OFF_ON_HALT=1` without the in-OS restriction or any GPIO conflict. See that project's own `Readme.md`/`recovery/` docs for exact flags — not reproduced here since getting bootloader-flashing steps wrong is high-stakes; verify against the source before running.
+  - once set, confirm it took: `sudo rpi-eeprom-config | grep POWER_OFF_ON_HALT`
 
 #### Enable GPS PPS on CTS4 (USART4)
 
@@ -317,7 +316,7 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
   - `sudo systemctl daemon-reload`
   - `sudo systemctl enable --now shutdownButton`
   - `sudo journalctl -u shutdownButton -f`
-    ==> confirm it logs "Watching gpiochip0 line 9 for button press", then press the button and confirm the unit shuts down cleanly (LED off, then power drops per `POWER_OFF_ON_HALT=1`)
+    ==> confirm it logs "Watching gpiochip0 line 9 for button press", then press the button and confirm `standaloneRecorder` stops cleanly (LED off) and the unit halts. Until the EEPROM's `POWER_OFF_ON_HALT` is set (see above — currently deferred), the board will sit halted rather than dropping to true low power; that part of the test has to wait until that setting is applied.
 
 ## Workflow
 
