@@ -31,12 +31,14 @@ The codebase has two layers:
 - `standalone/gps.py` — `GpsdClient`/`GpsClient`/`GpsFix`: `GpsdClient.waitForFix()` blocks until gpsd reports a valid fix via gpsd's own TCP JSON protocol — used because gpsd holds the GPS serial device open (`TIOCEXCL`) for the chrony PPS/SHM time bridge, so a direct serial open fails with "Device or resource busy". `GpsClient` (direct serial/NMEA parsing) is kept for use where gpsd isn't already running against the same device. The Standalone unit reads location exactly once at startup — no runtime location-change detection (relocating the unit requires a power cycle)
 - `standalone/statusLed.py` — `StatusLed`: `gpiod`-controlled illuminated power-switch LED for the Standalone unit; `setOk()` (solid), `setError()` (blink — also used while starting up/waiting for GPS), `setOff()`
 - `standalone/shutdownButton.py` — `ShutdownButton`: `gpiod`-controlled momentary switch (RXD4/GPIO9) that triggers `systemctl poweroff` on press; runs as its own service independent of `StandaloneRecorder` so it works even if recording has crashed
+- `standalone/ioExpander.py` — `Pcf8574`: reads a PCF8574 I2C I/O expander's 8 input pins (`readInput(bit)`/`readInputs()`); `busFactory` is injectable (defaults to `smbus2.SMBus`) for testing without hardware. Used at boot to gate the unit's WiFi radio off input #0 — see `scripts/checkWifiGate.py`
 - `standalone/standaloneRecorder.py` — `StandaloneRecorder`: orchestrates the Standalone unit — waits for a GPS fix, then wires `LocalAudioStream` + `ReadsbClient` (pointed at a local readsb/dump1090-fa instance) + an offline `FaaDatabase`-backed `typeDb` + `StorageGuard` + `StatusLed` around `AircraftRecordingSystem`
 **`scripts/` — server-side entry points**
 - `record.py` — run on the Ubuntu server; starts `AircraftRecordingSystem`
 - `buildDataset.py` — run on the Ubuntu server; extracts clips and writes `train.csv` / `val.csv`
 - `standaloneRecord.py` — run on the Standalone unit (CM4); starts `StandaloneRecorder`
 - `shutdownButtonWatch.py` — run on the Standalone unit (CM4); starts `ShutdownButton`
+- `checkWifiGate.py` — run once at boot on the Standalone unit (CM4) via `wifiGate.service`; reads PCF8574 input #0 and `rfkill block/unblock wifi` accordingly (symmetric — the switch fully determines WiFi state each boot)
 **`audioCapture/scripts/` — Pi-side entry points**
 - `capture.py` — run on the Pi Zero W; starts `PiCapture`
 

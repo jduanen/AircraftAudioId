@@ -13,6 +13,7 @@
 #                               ..dataset.faaDatabase) never break.
 #   scripts/standaloneRecord.py — the main recording entry point.
 #   scripts/shutdownButtonWatch.py — the shutdown-button entry point.
+#   scripts/checkWifiGate.py  — the boot-time WiFi gate check entry point.
 #   standaloneUnit/           — requirements.txt, systemd services,
 #                               cm4-led-gpio.dts, cm4-sdspi.dts,
 #                               cm4-shutdown-button.dts
@@ -82,6 +83,10 @@ rsync ${OPTS} \
     "${REMOTE_ROOT}/scripts/shutdownButtonWatch.py"
 
 rsync ${OPTS} \
+    "${PROJECT_ROOT}/scripts/checkWifiGate.py" \
+    "${REMOTE_ROOT}/scripts/checkWifiGate.py"
+
+rsync ${OPTS} \
     "${PROJECT_ROOT}/standaloneUnit/" \
     "${REMOTE_ROOT}/standaloneUnit/"
 
@@ -96,3 +101,5 @@ fi
 echo "Sync complete."
 echo "If standaloneRecorder/shutdownButton services are running on ${STANDALONE_HOST}, restart them to pick up the new code:"
 echo "  ssh jdn@${STANDALONE_HOST} sudo systemctl restart standaloneRecorder shutdownButton"
+echo "wifiGate.service is a boot-time oneshot — re-run it directly to test a code change without rebooting:"
+echo "  ssh jdn@${STANDALONE_HOST} sudo systemctl restart wifiGate"

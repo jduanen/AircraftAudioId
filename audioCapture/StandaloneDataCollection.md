@@ -24,6 +24,8 @@ The unit has a water-resistant power connector for the 12VDC (@?A) power supply 
 
 A separate momentary pushbutton (not the illuminated power switch above) is wired to USART4's RXD pin, for triggering a graceful shutdown without needing to pull power.
 
+A PCF8574 I2C I/O expander is wired to the base board's I2C bus (SDA/SCL). Input #0 is wired to a physical switch to GND (open = reads high/"set"; closed = reads low/"not set") that gates whether the unit's WiFi radio is enabled — see "Software" below.
+
 The enslosure is a cast aluminium case that serves as a heat-sink for the CM4 module (and, if possible, the USB-SDR dongle).
 The three (ADS-B 1090MHz, WiFi, and GPS) antennas are mounted onto the enclosure in such a manner as to resist water infiltration.
 
@@ -38,6 +40,8 @@ It is expected that, in order to gather sufficient data, this unit will remain i
 Because the unit is moved by power-cycling it (there's no way to relocate a sealed, running unit), it reads its position from the on-board GPS receiver exactly once at startup — blocking until a fix is acquired — and uses that fixed position for the entire run. There is no runtime location-change detection or mid-run restart; a fresh fix is simply acquired the next time the unit boots.
 
 A separate shutdown button (see "Hardware" above) triggers a full, graceful `systemctl poweroff` — not just stopping `standaloneRecorder`. It runs as its own independent service (`shutdownButton.service`) so it keeps working even if the recording service has crashed. Combined with the CM4 bootloader's `POWER_OFF_ON_HALT=1` EEPROM setting (see "Installation" below), a press brings the unit to genuine low-power state rather than just an idle halt, safe to physically power off at that point.
+
+The WiFi radio is normally meant to stay off on a sealed, unattended field unit — it's only needed when someone has physical access to flip the gate switch (see "Hardware" above), e.g. during retrieval or on-site troubleshooting. A separate one-shot service (`wifiGate.service`) checks the PCF8574's input #0 once at boot, before networking comes up, and calls `rfkill block wifi` or `rfkill unblock wifi` accordingly. This is symmetric by design — each boot's switch position fully determines that boot's WiFi state, so there's no way to end up with WiFi stuck on or off from a stale decision made on a previous boot.
 
 ### Installation
 
@@ -87,6 +91,29 @@ A separate shutdown button (see "Hardware" above) triggers a full, graceful `sys
   - `sudo -E rpi-eeprom-config --edit` **fails on CM4 by default** — CM4(S) disables in-OS EEPROM updates (`ERROR: EEPROM image 'rpi-eeprom-update is not enabled by default on CM4(S)...'`). The error's own suggested fix (enabling `dtparam=spi=on` in `config.txt` so the OS can talk to the EEPROM over SPI0 on GPIO7-11) **must not be used here** — it directly conflicts with GPIO9 (this button), GPIO10 (GPS PPS), and GPIO11 (status LED), all already muxed to other functions.
   - use the `rpiboot`/`usbboot` recovery-mode method instead: from a separate host with `rpiboot` (`raspberrypi/usbboot` on GitHub) and the CM4 put into USB boot mode (button on the Ochin board), `rpiboot` mounts the CM4's eMMC/EEPROM as a mass-storage device on that host, where `rpi-eeprom-config`/`rpi-eeprom-update` can edit `POWER_OFF_ON_HALT=1` without the in-OS restriction or any GPIO conflict. See that project's own `Readme.md`/`recovery/` docs for exact flags — not reproduced here since getting bootloader-flashing steps wrong is high-stakes; verify against the source before running.
   - once set, confirm it took: `sudo rpi-eeprom-config | grep POWER_OFF_ON_HALT`
+
+#### Enable the WiFi gate (I2C, see standaloneUnit/etc/systemd/system/wifiGate.service)
+
+* a PCF8574 I2C I/O expander is wired to the base board's I2C bus (SDA/SCL), with input #0 wired to a switch to GND
+  - open switch = pin floats high internally (pulled up) = "set" = WiFi enabled
+  - closed switch = pin pulled low = "not set" = WiFi disabled
+* no device-tree overlay needed for the expander itself — I2C is a bus, not a repurposed GPIO pin like the LED/button
+* enable the I2C bus if not already on: add `dtparam=i2c_arm=on` to `/boot/firmware/config.txt`, then `sudo reboot`
+* `sudo apt install -y i2c-tools python3-pip`
+* confirm the expander is visible and note its address: `sudo i2cdetect -y 1`
+  - the address depends on the PCF8574's A0-A2 strapping (common range: `0x20`-`0x27` for the PCF8574, `0x38`-`0x3F` for the PCF8574A) — `scripts/checkWifiGate.py`'s `--address` defaults to `0x20`; pass `--address 0x2X` (and update `wifiGate.service`'s `ExecStart` to match) if `i2cdetect` shows a different address
+* sanity-check the reading before trusting it: with the venv active,
+  ```bash
+  python3 -c "from aircraftAudio.standalone.ioExpander import Pcf8574; print(Pcf8574(address=0x20).readInput(0))"
+  ```
+  should print `True` with the switch open and `False` with it closed
+* install and enable the wifiGate service
+  - `cd ~/Code/AircraftAudioId/standaloneUnit`
+  - `sudo cp etc/systemd/system/wifiGate.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload`
+  - `sudo systemctl enable wifiGate`
+  - test without rebooting: `sudo systemctl restart wifiGate && sudo journalctl -u wifiGate -e`
+    ==> confirm it logs `Input 0 set — enabling WiFi.` or `Input 0 not set — disabling WiFi.` matching the switch position, and `rfkill list wifi` reflects the resulting block/unblock state
 
 #### Enable GPS PPS on CTS4 (USART4)
 
@@ -317,6 +344,15 @@ The micro-SD card is the unit's bulk storage (see "Hardware" above) — mount it
   - `sudo systemctl enable --now shutdownButton`
   - `sudo journalctl -u shutdownButton -f`
     ==> confirm it logs "Watching gpiochip0 line 9 for button press", then press the button and confirm `standaloneRecorder` stops cleanly (LED off) and the unit halts. Until the EEPROM's `POWER_OFF_ON_HALT` is set (see above — currently deferred), the board will sit halted rather than dropping to true low power; that part of the test has to wait until that setting is applied.
+
+* install and enable the wifiGate service (see "Enable the WiFi gate" above for the I2C bring-up/address steps)
+  - `cd ${HOME}/Code/AircraftAudioId/standaloneUnit`
+  - `sudo cp etc/systemd/system/wifiGate.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload`
+  - `sudo systemctl enable wifiGate`
+  - `sudo reboot`
+  - `sudo journalctl -u wifiGate -b`
+    ==> confirm it ran once at boot and its block/unblock decision matches the switch position
 
 ## Workflow
 

@@ -17,3 +17,6 @@ pynmea2
 
 # Status LED (GPIO)
 gpiod
+
+# WiFi gate switch (I2C I/O expander)
+smbus2
