@@ -1,0 +1,19 @@
+[Unit]
+Description=Standalone unit WiFi gate check (PCF8574 input 0)
+DefaultDependencies=no
+# systemd-rfkill restores the previous boot's saved rfkill state — run after
+# it so our block/unblock decision is the one that actually sticks, and
+# before WiFi is brought up so a "disable" reading never has a window where
+# the radio is briefly live.
+After=systemd-rfkill.service local-fs.target
+Before=network-pre.target NetworkManager.service wpa_supplicant.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/jdn/Code/AircraftAudioId/standaloneUnit/venv/bin/python \
+    /home/jdn/Code/AircraftAudioId/scripts/checkWifiGate.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
